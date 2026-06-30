@@ -49,6 +49,14 @@ export async function renderMusic(
 
     if (taskId && ctx.progress) completeTask(ctx.progress, taskId);
 
+    if (!audio?.uint8Array) {
+      throw new Error(
+        `We couldn't generate the background music for this video (music model "${modelId}"). ` +
+          `The audio came back empty. Please try again — if it keeps happening, ` +
+          `try a different music model or adjust the prompt.`,
+      );
+    }
+
     const mediaType =
       (audio as { mediaType?: string }).mediaType ?? "audio/mpeg";
 

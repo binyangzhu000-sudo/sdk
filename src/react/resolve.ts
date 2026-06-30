@@ -475,6 +475,15 @@ export async function resolveSpeechElement(
     cacheKey,
   });
 
+  const modelId = typeof model === "string" ? model : model.modelId;
+  if (!audio?.uint8Array) {
+    throw new Error(
+      `We couldn't generate the voiceover for this scene (speech model "${modelId}"). ` +
+        `The audio came back empty. Please try again — if it keeps happening, ` +
+        `try a different voice or speech model.`,
+    );
+  }
+
   const mediaType = (audio as { mediaType?: string }).mediaType ?? "audio/mpeg";
 
   const file = File.fromGenerated({
