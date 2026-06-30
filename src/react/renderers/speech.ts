@@ -53,6 +53,14 @@ export async function renderSpeech(
 
     if (taskId && ctx.progress) completeTask(ctx.progress, taskId);
 
+    if (!audio?.uint8Array) {
+      throw new Error(
+        `Speech generation returned no audio (model=${modelId}). ` +
+          `This usually means a stale/incompatible render cache entry was reconstructed ` +
+          `without an 'audio' field, or the gateway/provider returned an empty response.`,
+      );
+    }
+
     const mediaType =
       (audio as { mediaType?: string }).mediaType ?? "audio/mpeg";
 
