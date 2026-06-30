@@ -478,9 +478,9 @@ export async function resolveSpeechElement(
   const modelId = typeof model === "string" ? model : model.modelId;
   if (!audio?.uint8Array) {
     throw new Error(
-      `Speech generation returned no audio (model=${modelId}). ` +
-        `This usually means a stale/incompatible render cache entry was reconstructed ` +
-        `without an 'audio' field, or the gateway/provider returned an empty response.`,
+      `We couldn't generate the voiceover for this scene (speech model "${modelId}"). ` +
+        `The audio came back empty. Please try again — if it keeps happening, ` +
+        `try a different voice or speech model.`,
     );
   }
 

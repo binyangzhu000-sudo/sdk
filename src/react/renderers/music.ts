@@ -51,9 +51,9 @@ export async function renderMusic(
 
     if (!audio?.uint8Array) {
       throw new Error(
-        `Music generation returned no audio (model=${modelId}). ` +
-          `This usually means a stale/incompatible render cache entry was reconstructed ` +
-          `without an 'audio' field, or the gateway/provider returned an empty response.`,
+        `We couldn't generate the background music for this video (music model "${modelId}"). ` +
+          `The audio came back empty. Please try again — if it keeps happening, ` +
+          `try a different music model or adjust the prompt.`,
       );
     }
 
