@@ -16,7 +16,7 @@
 
 ---
 
-**varg** is an open-source TypeScript SDK for AI video generation. One API key, one gateway — generate images, video, speech, music, lipsync, and captions through `varg.*` providers. Write videos as JSX components (like React), render locally or in the cloud.
+**varg** is an open-source TypeScript SDK for AI video generation. One API key, one API — generate images, video, speech, music, lipsync, and captions through `varg.*` providers. Write videos as JSX components (like React), render locally or in the cloud.
 
 ## Get started
 
@@ -65,7 +65,7 @@ Or ask your AI agent to create something from scratch.
 ```
 Your prompt / JSX code
         |
-   varg gateway (api.varg.ai)
+   varg API (api.varg.ai/v2)
    /     |      \        \
  Kling  Flux  ElevenLabs  Wan ...   (AI providers)
    \     |      /        /
@@ -74,10 +74,10 @@ Your prompt / JSX code
    output.mp4
 ```
 
-- **One API key** (`VARG_API_KEY`) routes to all providers through the varg gateway
+- **One API key** (`VARG_API_KEY`) routes to all providers through the varg API
 - **Declarative JSX** — compose videos like React components with `<Clip>`, `<Video>`, `<Music>`, `<Captions>`
 - **Automatic caching** — same props = instant cache hit at $0. Re-render without re-generating
-- **Local or cloud** — render with `bunx vargai render` locally, or submit via the Cloud Render API
+- **Local or cloud** — render with `bunx vargai render` locally, or submit via the cloud render endpoint (`POST https://api.varg.ai/v2/render`)
 
 ## Quick examples
 
