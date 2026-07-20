@@ -211,41 +211,74 @@ const VIDEO_UPSCALE_MODELS: Record<string, string> = {
   "sima-video-upscaler": "simalabs/sima-video-upscaler-lite",
 };
 
-const IMAGE_MODELS: Record<string, string> = {
+export const IMAGE_MODELS: Record<string, string> = {
+  // ── Flux (fal-ai/flux/*) ────────────────────────────────────────────────
   "flux-pro": "fal-ai/flux-pro/v1.1",
   "flux-dev": "fal-ai/flux/dev",
   "flux-schnell": "fal-ai/flux/schnell",
+  // prod canonical (underscored) aliases
+  flux_pro: "fal-ai/flux-pro/v1.1",
+  flux_dev: "fal-ai/flux/dev",
+  flux_schnell: "fal-ai/flux/schnell",
+  // ── Recraft ─────────────────────────────────────────────────────────────
   "recraft-v3": "fal-ai/recraft/v3/text-to-image",
+  recraft_v3: "fal-ai/recraft/v3/text-to-image",
+  "recraft-v4-pro": "fal-ai/recraft/v4/pro/text-to-image",
+  // ── Nano Banana (Google Gemini 3 Pro Image) ─────────────────────────────
   "nano-banana-pro": "fal-ai/nano-banana-pro",
   "nano-banana-pro/edit": "fal-ai/nano-banana-pro/edit",
   "nano-banana-2": "fal-ai/nano-banana-2",
   "nano-banana-2/edit": "fal-ai/nano-banana-2/edit",
+  // prod canonical (underscored) aliases
+  nano_banana_pro: "fal-ai/nano-banana-pro",
+  "nano_banana_pro/edit": "fal-ai/nano-banana-pro/edit",
+  nano_banana_2: "fal-ai/nano-banana-2",
+  "nano_banana_2/edit": "fal-ai/nano-banana-2/edit",
+  // ── Seedream ────────────────────────────────────────────────────────────
   "seedream-v4.5/edit": "fal-ai/bytedance/seedream/v4.5/edit",
-  // Qwen Image 2 - text-to-image and image-to-image editing (standard + pro)
+  seedream_v4_5_edit: "fal-ai/bytedance/seedream/v4.5/edit",
+  "seedream_v4.5/edit": "fal-ai/bytedance/seedream/v4.5/edit",
+  "seedream-5-pro": "bytedance/seedream/v5/pro/text-to-image",
+  "seedream-5-pro/edit": "bytedance/seedream/v5/pro/edit",
+  seedream_5_pro: "bytedance/seedream/v5/pro/text-to-image",
+  "seedream_5_pro/edit": "bytedance/seedream/v5/pro/edit",
+  // ── Qwen Image 2 (standard + pro) ───────────────────────────────────────
   "qwen-image-2": "fal-ai/qwen-image-2/text-to-image",
   "qwen-image-2/edit": "fal-ai/qwen-image-2/edit",
   "qwen-image-2-pro": "fal-ai/qwen-image-2/pro/text-to-image",
   "qwen-image-2-pro/edit": "fal-ai/qwen-image-2/pro/edit",
-  // Grok Imagine Image - xAI text-to-image and image editing
+  // ── Qwen Image Edit 2511 Multiple Angles ─────────────────────────────────
+  "qwen-angles": "fal-ai/qwen-image-edit-2511-multiple-angles",
+  qwen_angles: "fal-ai/qwen-image-edit-2511-multiple-angles",
+  // ── Grok Imagine Image (xAI) ─────────────────────────────────────────────
   "grok-imagine-image": "xai/grok-imagine-image",
   "grok-imagine-image/edit": "xai/grok-imagine-image/edit",
-  // Qwen Image Edit 2511 Multiple Angles - camera angle adjustment
-  "qwen-angles": "fal-ai/qwen-image-edit-2511-multiple-angles",
-  // Recraft V4 Pro - text-to-image
-  "recraft-v4-pro": "fal-ai/recraft/v4/pro/text-to-image",
-  // Reve - image editing
+  grok_imagine_image: "xai/grok-imagine-image",
+  "grok_imagine_image/edit": "xai/grok-imagine-image/edit",
+  // ── Krea 2 ──────────────────────────────────────────────────────────────
+  "krea-2-turbo-style": "fal-ai/krea-2/turbo/style",
+  krea_2_turbo_style: "fal-ai/krea-2/turbo/style",
+  // ── Reve ────────────────────────────────────────────────────────────────
   "reve/edit": "fal-ai/reve/edit",
-  // Phota - personalized photo generation, editing, and enhancement
+  // ── Phota ───────────────────────────────────────────────────────────────
   phota: "fal-ai/phota",
   "phota/edit": "fal-ai/phota/edit",
   "phota/enhance": "fal-ai/phota/enhance",
-  // Image upscale models
+  // ── Microsoft MAI-Image-2.5 (2026-07) ────────────────────────────────────
+  "mai-image-2.5": "microsoft/mai-image-2.5",
+  "mai-image-2.5/edit": "microsoft/mai-image-2.5/edit",
+  mai_image_2_5: "microsoft/mai-image-2.5",
+  "mai_image_2_5/edit": "microsoft/mai-image-2.5/edit",
+  // ── Image upscale models ────────────────────────────────────────────────
   seedvr: "fal-ai/seedvr/upscale/image",
   "recraft-clarity": "fal-ai/recraft-clarity-upscale",
+  recraft_clarity: "fal-ai/recraft-clarity-upscale",
   "clarity-upscaler": "fal-ai/clarity-upscaler",
+  clarity_upscaler: "fal-ai/clarity-upscaler",
   topaz: "fal-ai/topaz/upscale/image",
   ccsr: "fal-ai/ccsr",
   "aura-sr": "fal-ai/aura-sr",
+  aura_sr: "fal-ai/aura-sr",
 };
 
 // Models that use image_size instead of aspect_ratio
@@ -253,7 +286,16 @@ const IMAGE_SIZE_MODELS = new Set([
   "flux-schnell",
   "flux-dev",
   "flux-pro",
+  "flux_schnell",
+  "flux_dev",
+  "flux_pro",
   "seedream-v4.5/edit",
+  "seedream_v4.5/edit",
+  "seedream_v4_5_edit",
+  "seedream-5-pro",
+  "seedream-5-pro/edit",
+  "seedream_5_pro",
+  "seedream_5_pro/edit",
   "qwen-image-2",
   "qwen-image-2/edit",
   "qwen-image-2-pro",
@@ -262,7 +304,7 @@ const IMAGE_SIZE_MODELS = new Set([
 ]);
 
 // Qwen Angles model - image-to-image with camera angle adjustment
-const QWEN_ANGLES_MODEL = "qwen-angles";
+const QWEN_ANGLES_MODELS = new Set(["qwen-angles", "qwen_angles"]);
 
 // Models that use singular image_url instead of image_urls array
 const SINGULAR_IMAGE_URL_MODELS = new Set([
@@ -271,10 +313,13 @@ const SINGULAR_IMAGE_URL_MODELS = new Set([
   // Image upscale models
   "seedvr",
   "recraft-clarity",
+  "recraft_clarity",
   "clarity-upscaler",
+  "clarity_upscaler",
   "topaz",
   "ccsr",
   "aura-sr",
+  "aura_sr",
 ]);
 
 // Map aspect ratio to image_size for Qwen Angles (base dimension 1024)
@@ -985,7 +1030,7 @@ class FalImageModel implements ImageModelV3 {
     } = options;
     const warnings: SharedV3Warning[] = [];
 
-    const isQwenAngles = this.modelId === QWEN_ANGLES_MODEL;
+    const isQwenAngles = QWEN_ANGLES_MODELS.has(this.modelId);
 
     const input: Record<string, unknown> = {
       num_images: n ?? 1,
@@ -1146,7 +1191,11 @@ class FalImageModel implements ImageModelV3 {
     }
 
     // Nano Banana 2: route to /edit when images are provided, base endpoint for t2i
-    if (this.modelId === "nano-banana-2" && hasFiles) {
+    // Supports both hyphenated (nano-banana-2) and underscored (nano_banana_2) aliases
+    if (
+      (this.modelId === "nano-banana-2" || this.modelId === "nano_banana_2") &&
+      hasFiles
+    ) {
       return "fal-ai/nano-banana-2/edit";
     }
 

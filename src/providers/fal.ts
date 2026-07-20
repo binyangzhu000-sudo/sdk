@@ -4,12 +4,28 @@
  */
 
 import { fal } from "@fal-ai/client";
+import { IMAGE_MODELS } from "../ai-sdk/providers/fal";
 import type { JobStatusUpdate, ProviderConfig } from "../core/schema/types";
 import { BaseProvider, ensureUrl } from "./base";
 
 const falApiKey = process.env.FAL_API_KEY ?? process.env.FAL_KEY;
 if (falApiKey) {
   fal.config({ credentials: falApiKey });
+}
+
+/**
+ * Resolve an SDK image-model alias (e.g. "mai-image-2.5", "nano-banana-pro")
+ * to its fal upstream endpoint. Pass-through rules:
+ *   - `raw:<endpoint>`  → strip the `raw:` prefix (escape hatch for unmapped ids)
+ *   - already an upstream id (contains a `/`) → use as-is
+ *   - known alias in IMAGE_MODELS → resolved upstream id
+ *   - unknown alias with no `/` → falls through as-is (fal will 404; surfaces
+ *     the bad name clearly rather than silently misrouting)
+ */
+function resolveFalImageModel(model: string): string {
+  if (model.startsWith("raw:")) return model.slice(4);
+  if (model.includes("/")) return model;
+  return IMAGE_MODELS[model] ?? model;
 }
 
 export class FalProvider extends BaseProvider {
@@ -240,7 +256,10 @@ export class FalProvider extends BaseProvider {
     model?: string;
     imageSize?: string;
   }) {
-    const modelId = args.model || "fal-ai/flux-pro/v1.1";
+    // Resolve SDK aliases (e.g. "mai-image-2.5", "nano-banana-pro") to fal
+    // upstream endpoints. Unknown / "raw:"-prefixed / already-upstream ids
+    // pass through unchanged. Mirrors IMAGE_MODELS in ai-sdk/providers/fal.ts.
+    const modelId = resolveFalImageModel(args.model || "fal-ai/flux-pro/v1.1");
 
     console.log(`[fal] generating image with ${modelId}`);
     console.log(`[fal] prompt: ${args.prompt}`);

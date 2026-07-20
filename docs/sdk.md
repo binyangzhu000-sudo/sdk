@@ -740,7 +740,7 @@ createVideoAd();
 
 | model type | models |
 |---|---|
-| `imageModel` | `nano-banana-pro`, `nano-banana-pro/edit` |
+| `imageModel` | `mai-image-2.5`, `mai-image-2.5/edit`, `seedream-5-pro`, `seedream-5-pro/edit`, `nano-banana-pro`, `nano-banana-pro/edit`, `nano-banana-2`, `nano-banana-2/edit`, `flux-pro`, `flux-dev`, `flux-schnell`, `seedream-v4.5/edit`, `qwen-image-2`, `qwen-image-2-pro`, `grok-imagine-image`, `phota`, `phota/edit`, `seedvr`, `recraft-clarity`, `topaz` |
 | `videoModel` | `kling-v3`, `kling-v3-standard`, `kling-v2.6`, `kling-v2.5` |
 | `lipsyncModel` | `sync-v2-pro` |
 
@@ -776,6 +776,37 @@ createVideoAd();
 | model type | models |
 |---|---|
 | `imageModel` | `birefnet` (background removal), any replicate model |
+
+### varg
+
+The `varg` provider talks to the unified varg API at `api.varg.ai/v2` and
+accepts **any canonical model name** from the live catalog
+(`GET /v2/models` / `GET /v2/pricing`) — no SDK-side allowlist. New models
+seeded into the API DB are immediately callable.
+
+| model type | models |
+|---|---|
+| `imageModel` | any `/v2` image model — e.g. `mai_image_2_5`, `seedream_5_pro`, `nano-banana-pro`, `flux-pro`, `veo_3_1` |
+| `videoModel` | any `/v2` video model — e.g. `kling_v3`, `veo_3_1`, `seedance_2`, `happy_horse` |
+| `speechModel` | any `/v2` speech model — e.g. `eleven_turbo_v2` |
+| `musicModel` | any `/v2` music model |
+
+```ts
+import { generateImage, varg } from "@varg/sdk";
+
+// Auto-routes through the varg API catalog (priority + input shape):
+const { image } = await generateImage({
+  model: varg.imageModel("mai_image_2_5"),
+  prompt: "a red fox in snow, cinematic",
+});
+
+// Image editing (auto-routes to the /edit route because files are present):
+const { image } = await generateImage({
+  model: varg.imageModel("seedream_5_pro"),
+  prompt: "make it sunset",
+  images: [referenceImage],
+});
+```
 
 ---
 
