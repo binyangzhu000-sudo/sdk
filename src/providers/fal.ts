@@ -4,7 +4,7 @@
  */
 
 import { fal } from "@fal-ai/client";
-import { IMAGE_MODELS } from "../ai-sdk/providers/fal";
+import { IMAGE_MODELS, normalizeModelId } from "../ai-sdk/providers/fal";
 import type { JobStatusUpdate, ProviderConfig } from "../core/schema/types";
 import { BaseProvider, ensureUrl } from "./base";
 
@@ -14,8 +14,9 @@ if (falApiKey) {
 }
 
 /**
- * Resolve an SDK image-model alias (e.g. "mai-image-2.5", "nano-banana-pro")
- * to its fal upstream endpoint. Pass-through rules:
+ * Resolve an SDK image-model alias (e.g. "mai-image-2.5", "nano_banana_pro")
+ * to its fal upstream endpoint. Underscored prod canonical names are
+ * normalized to hyphenated SDK aliases before lookup. Pass-through rules:
  *   - `raw:<endpoint>`  → strip the `raw:` prefix (escape hatch for unmapped ids)
  *   - already an upstream id (contains a `/`) → use as-is
  *   - known alias in IMAGE_MODELS → resolved upstream id
@@ -23,9 +24,9 @@ if (falApiKey) {
  *     the bad name clearly rather than silently misrouting)
  */
 function resolveFalImageModel(model: string): string {
-  if (model.startsWith("raw:")) return model.slice(4);
-  if (model.includes("/")) return model;
-  return IMAGE_MODELS[model] ?? model;
+  const id = normalizeModelId(model);
+  if (id.startsWith("raw:")) return id.slice(4);
+  return IMAGE_MODELS[id] ?? id;
 }
 
 export class FalProvider extends BaseProvider {
