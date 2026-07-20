@@ -211,35 +211,61 @@ const VIDEO_UPSCALE_MODELS: Record<string, string> = {
   "sima-video-upscaler": "simalabs/sima-video-upscaler-lite",
 };
 
-const IMAGE_MODELS: Record<string, string> = {
+/**
+ * Normalize a model alias: underscores → hyphens. The prod API uses
+ * underscored canonical names (nano_banana_pro, flux_pro, mai_image_2_5),
+ * while the SDK historically uses hyphenated aliases (nano-banana-pro,
+ * flux-pro, mai-image-2.5). Normalizing once here lets every lookup table
+ * (IMAGE_MODELS, IMAGE_SIZE_MODELS, SINGULAR_IMAGE_URL_MODELS, …) store
+ * only the hyphenated form and still accept the prod canonical spelling.
+ * `raw:` prefix and strings containing `/` (upstream fal endpoints) are
+ * returned unchanged.
+ */
+export function normalizeModelId(modelId: string): string {
+  if (modelId.startsWith("raw:")) return modelId;
+  if (modelId.includes("/")) return modelId;
+  return modelId.replace(/_/g, "-");
+}
+
+export const IMAGE_MODELS: Record<string, string> = {
+  // ── Flux (fal-ai/flux/*) ────────────────────────────────────────────────
   "flux-pro": "fal-ai/flux-pro/v1.1",
   "flux-dev": "fal-ai/flux/dev",
   "flux-schnell": "fal-ai/flux/schnell",
+  // ── Recraft ─────────────────────────────────────────────────────────────
   "recraft-v3": "fal-ai/recraft/v3/text-to-image",
+  "recraft-v4-pro": "fal-ai/recraft/v4/pro/text-to-image",
+  // ── Nano Banana (Google Gemini 3 Pro Image) ─────────────────────────────
   "nano-banana-pro": "fal-ai/nano-banana-pro",
   "nano-banana-pro/edit": "fal-ai/nano-banana-pro/edit",
   "nano-banana-2": "fal-ai/nano-banana-2",
   "nano-banana-2/edit": "fal-ai/nano-banana-2/edit",
+  // ── Seedream ────────────────────────────────────────────────────────────
   "seedream-v4.5/edit": "fal-ai/bytedance/seedream/v4.5/edit",
-  // Qwen Image 2 - text-to-image and image-to-image editing (standard + pro)
+  "seedream-5-pro": "bytedance/seedream/v5/pro/text-to-image",
+  "seedream-5-pro/edit": "bytedance/seedream/v5/pro/edit",
+  // ── Qwen Image 2 (standard + pro) ───────────────────────────────────────
   "qwen-image-2": "fal-ai/qwen-image-2/text-to-image",
   "qwen-image-2/edit": "fal-ai/qwen-image-2/edit",
   "qwen-image-2-pro": "fal-ai/qwen-image-2/pro/text-to-image",
   "qwen-image-2-pro/edit": "fal-ai/qwen-image-2/pro/edit",
-  // Grok Imagine Image - xAI text-to-image and image editing
+  // ── Qwen Image Edit 2511 Multiple Angles ─────────────────────────────────
+  "qwen-angles": "fal-ai/qwen-image-edit-2511-multiple-angles",
+  // ── Grok Imagine Image (xAI) ─────────────────────────────────────────────
   "grok-imagine-image": "xai/grok-imagine-image",
   "grok-imagine-image/edit": "xai/grok-imagine-image/edit",
-  // Qwen Image Edit 2511 Multiple Angles - camera angle adjustment
-  "qwen-angles": "fal-ai/qwen-image-edit-2511-multiple-angles",
-  // Recraft V4 Pro - text-to-image
-  "recraft-v4-pro": "fal-ai/recraft/v4/pro/text-to-image",
-  // Reve - image editing
+  // ── Krea 2 ──────────────────────────────────────────────────────────────
+  "krea-2-turbo-style": "fal-ai/krea-2/turbo/style",
+  // ── Reve ────────────────────────────────────────────────────────────────
   "reve/edit": "fal-ai/reve/edit",
-  // Phota - personalized photo generation, editing, and enhancement
+  // ── Phota ───────────────────────────────────────────────────────────────
   phota: "fal-ai/phota",
   "phota/edit": "fal-ai/phota/edit",
   "phota/enhance": "fal-ai/phota/enhance",
-  // Image upscale models
+  // ── Microsoft MAI-Image-2.5 (2026-07) ────────────────────────────────────
+  "mai-image-2-5": "microsoft/mai-image-2.5",
+  "mai-image-2-5/edit": "microsoft/mai-image-2.5/edit",
+  // ── Image upscale models ────────────────────────────────────────────────
   seedvr: "fal-ai/seedvr/upscale/image",
   "recraft-clarity": "fal-ai/recraft-clarity-upscale",
   "clarity-upscaler": "fal-ai/clarity-upscaler",
@@ -254,6 +280,8 @@ const IMAGE_SIZE_MODELS = new Set([
   "flux-dev",
   "flux-pro",
   "seedream-v4.5/edit",
+  "seedream-5-pro",
+  "seedream-5-pro/edit",
   "qwen-image-2",
   "qwen-image-2/edit",
   "qwen-image-2-pro",
@@ -262,7 +290,7 @@ const IMAGE_SIZE_MODELS = new Set([
 ]);
 
 // Qwen Angles model - image-to-image with camera angle adjustment
-const QWEN_ANGLES_MODEL = "qwen-angles";
+const QWEN_ANGLES_MODELS = new Set(["qwen-angles"]);
 
 // Models that use singular image_url instead of image_urls array
 const SINGULAR_IMAGE_URL_MODELS = new Set([
@@ -985,7 +1013,10 @@ class FalImageModel implements ImageModelV3 {
     } = options;
     const warnings: SharedV3Warning[] = [];
 
-    const isQwenAngles = this.modelId === QWEN_ANGLES_MODEL;
+    // Normalize _ → - once so prod canonical names (nano_banana_pro) match
+    // the hyphenated keys in IMAGE_MODELS / IMAGE_SIZE_MODELS / etc.
+    const id = normalizeModelId(this.modelId);
+    const isQwenAngles = QWEN_ANGLES_MODELS.has(id);
 
     const input: Record<string, unknown> = {
       num_images: n ?? 1,
@@ -1007,7 +1038,7 @@ class FalImageModel implements ImageModelV3 {
       input.acceleration = "high";
     }
 
-    const usesImageSize = IMAGE_SIZE_MODELS.has(this.modelId);
+    const usesImageSize = IMAGE_SIZE_MODELS.has(id);
 
     if (size) {
       // size format is "{width}x{height}"
@@ -1065,7 +1096,7 @@ class FalImageModel implements ImageModelV3 {
       const fileHashes = await computeFileHashes(files);
       const imageUrls = await pMap(files, fileToUrl, { concurrency: 2 });
       // Reve uses singular image_url instead of image_urls array
-      if (SINGULAR_IMAGE_URL_MODELS.has(this.modelId)) {
+      if (SINGULAR_IMAGE_URL_MODELS.has(id)) {
         input.image_url = imageUrls[0];
       } else {
         input.image_urls = imageUrls;
@@ -1141,16 +1172,17 @@ class FalImageModel implements ImageModelV3 {
   }
 
   private resolveEndpoint(hasFiles?: boolean): string {
-    if (this.modelId.startsWith("raw:")) {
-      return this.modelId.slice(4);
+    const id = normalizeModelId(this.modelId);
+    if (id.startsWith("raw:")) {
+      return id.slice(4);
     }
 
     // Nano Banana 2: route to /edit when images are provided, base endpoint for t2i
-    if (this.modelId === "nano-banana-2" && hasFiles) {
+    if (id === "nano-banana-2" && hasFiles) {
       return "fal-ai/nano-banana-2/edit";
     }
 
-    return IMAGE_MODELS[this.modelId] ?? this.modelId;
+    return IMAGE_MODELS[id] ?? id;
   }
 }
 

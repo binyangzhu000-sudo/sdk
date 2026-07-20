@@ -57,7 +57,7 @@ function resolveConfig(settings: VargProviderSettings = {}) {
     }
   }
 
-  const baseUrl = settings.baseUrl ?? "https://api.varg.ai/v1";
+  const baseUrl = settings.baseUrl ?? "https://api.varg.ai/v2";
   return { apiKey, baseUrl };
 }
 
@@ -68,12 +68,35 @@ function getHeaders(apiKey: string): Record<string, string> {
   };
 }
 
+// /v2 job shape (routes/varg_jobs/common.ts serializeVargJob). The create
+// response wraps this with `urls: { self, refresh, status, cancel, retry }`.
+// The poll response (GET /v2/jobs/:id) is the same shape, possibly with
+// `output: { version: "v1", outputs: [{url, media_type, size_bytes, ...}] }`
+// once terminal. `id` is the varg job id ("job_…"); the legacy /v1 gateway
+// used `job_id` — this is the main breaking shape change.
+interface VargJobResponse {
+  id: string;
+  status: string;
+  output?: {
+    version: "v1";
+    outputs: Array<{
+      url?: string;
+      media_type?: string;
+      size_bytes?: number;
+      data?: unknown;
+    }>;
+  };
+  error?: string | null;
+  progress_message?: string | null;
+  progress?: number | null;
+}
+
 async function submitJob(
   baseUrl: string,
   apiKey: string,
   capability: "video" | "image" | "speech" | "music",
   params: Record<string, unknown>,
-) {
+): Promise<VargJobResponse> {
   const response = await fetch(`${baseUrl}/${capability}`, {
     method: "POST",
     headers: getHeaders(apiKey),
@@ -86,15 +109,11 @@ async function submitJob(
       unknown
     > | null;
     const errorData = ((raw?.error ?? raw) || {}) as { message?: string };
-    const msg = errorData?.message ?? `gateway returned ${response.status}`;
+    const msg = errorData?.message ?? `varg api returned ${response.status}`;
     throw new VargAPIError(msg, response.status);
   }
 
-  return (await response.json()) as {
-    job_id: string;
-    status: string;
-    output?: { url: string; media_type: string };
-  };
+  return (await response.json()) as VargJobResponse;
 }
 
 async function pollJob(
@@ -103,7 +122,7 @@ async function pollJob(
   jobId: string,
   maxAttempts = 900,
   intervalMs = 2000,
-) {
+): Promise<VargJobResponse> {
   for (let i = 0; i < maxAttempts; i++) {
     const res = await fetch(`${baseUrl}/jobs/${jobId}`, {
       headers: getHeaders(apiKey),
@@ -114,12 +133,7 @@ async function pollJob(
         res.status,
       );
     }
-    const job = (await res.json()) as {
-      job_id: string;
-      status: string;
-      output?: { url: string; media_type: string };
-      error?: string;
-    };
+    const job = (await res.json()) as VargJobResponse;
     if (
       job.status === "completed" ||
       job.status === "failed" ||
@@ -132,6 +146,11 @@ async function pollJob(
   throw new VargAPIError(`job ${jobId} did not complete within timeout`);
 }
 
+/**
+ * Submit + poll a /v2 job and download the first output artifact as bytes.
+ * For multi-output jobs the caller gets outputs[0]; for inline-data outputs
+ * (e.g. transcription JSON) the data is returned as a UTF-8 JSON byte payload.
+ */
 async function executeJob(
   baseUrl: string,
   apiKey: string,
@@ -140,41 +159,56 @@ async function executeJob(
 ): Promise<{ data: Uint8Array; mediaType: string; jobId: string }> {
   const job = await submitJob(baseUrl, apiKey, capability, params);
 
-  // Completed synchronously (cache hit)
-  if (job.status === "completed" && job.output?.url) {
-    const res = await fetch(job.output.url);
-    if (!res.ok)
-      throw new VargAPIError(
-        `failed to download from ${job.output.url}: ${res.status}`,
-      );
-    return {
-      data: new Uint8Array(await res.arrayBuffer()),
-      mediaType: job.output.media_type,
-      jobId: job.job_id,
-    };
+  // Completed synchronously (cache hit) — /v2 returns the full output shape
+  // on the create response when the job is already terminal.
+  if (job.status === "completed" && job.output?.outputs?.length) {
+    return downloadOutput(job);
   }
 
   // Poll until done
-  const completed = await pollJob(baseUrl, apiKey, job.job_id);
+  const completed = await pollJob(baseUrl, apiKey, job.id);
   if (completed.status === "failed") {
     throw new VargAPIError(
-      `job ${completed.job_id} failed: ${completed.error || "unknown"}`,
+      `job ${completed.id} failed: ${completed.error || "unknown"}`,
     );
   }
-  if (!completed.output) {
+  if (completed.status === "cancelled") {
+    throw new VargAPIError(`job ${completed.id} was cancelled`);
+  }
+  if (!completed.output?.outputs?.length) {
     throw new VargAPIError(`${capability} completed but no output`);
   }
+  return downloadOutput(completed);
+}
 
-  const res = await fetch(completed.output.url);
-  if (!res.ok) {
-    throw new VargAPIError(
-      `failed to download from ${completed.output.url}: ${res.status}`,
-    );
+/** Download the first output artifact of a terminal /v2 job. Handles both
+ *  URL-bearing outputs (download via fetch) and inline `data` outputs
+ *  (serialize to JSON bytes). */
+async function downloadOutput(
+  job: VargJobResponse,
+): Promise<{ data: Uint8Array; mediaType: string; jobId: string }> {
+  const out = job.output!.outputs[0]!;
+  if (out.url) {
+    const res = await fetch(out.url);
+    if (!res.ok) {
+      throw new VargAPIError(
+        `failed to download from ${out.url}: ${res.status}`,
+        res.status,
+      );
+    }
+    return {
+      data: new Uint8Array(await res.arrayBuffer()),
+      mediaType: out.media_type ?? "application/octet-stream",
+      jobId: job.id,
+    };
   }
+  // Inline structured result (no file) — serialize to JSON bytes so the
+  // caller's Uint8Array contract still holds.
+  const json = new TextEncoder().encode(JSON.stringify(out.data ?? null));
   return {
-    data: new Uint8Array(await res.arrayBuffer()),
-    mediaType: completed.output.media_type,
-    jobId: job.job_id,
+    data: json,
+    mediaType: out.media_type ?? "application/json",
+    jobId: job.id,
   };
 }
 
