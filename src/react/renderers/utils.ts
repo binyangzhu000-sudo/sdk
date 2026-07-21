@@ -66,6 +66,10 @@ const IGNORED_PROPS_BY_TYPE: Partial<Record<VargElement["type"], Set<string>>> =
       "cutTo",
       "volume",
       "keepAudio",
+      // "audio: native" sugar is expanded into providerOptions.*.generate_audio
+      // at element creation; the expanded options carry the semantic difference,
+      // so the sugar prop itself must not affect the key.
+      "audio",
     ]),
     speech: new Set(["volume", "id"]),
   };

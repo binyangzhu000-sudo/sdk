@@ -18,6 +18,7 @@ import type {
   VargNode,
   VideoProps,
 } from "../types";
+import { audioMixVolume, renderAudio } from "./audio";
 import type { RenderContext } from "./context";
 import { renderImage } from "./image";
 import { renderMusic } from "./music";
@@ -147,6 +148,25 @@ async function renderClipLayers(
                   type: "audio",
                   path,
                   mixVolume: props.volume ?? 1,
+                }) as AudioLayer,
+            ),
+        });
+        break;
+      }
+
+      case "audio": {
+        // Derived audio node (video.audio / speech.audio) as clip child —
+        // plays as an audio layer, same as speech.
+        pending.push({
+          type: "async",
+          promise: renderAudio(element as VargElement<"audio">, ctx)
+            .then((file) => ctx.backend.resolvePath(file))
+            .then(
+              (path) =>
+                ({
+                  type: "audio",
+                  path,
+                  mixVolume: audioMixVolume(element as VargElement<"audio">),
                 }) as AudioLayer,
             ),
         });

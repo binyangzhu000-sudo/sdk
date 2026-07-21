@@ -34,6 +34,7 @@ import type {
   SpeechProps,
   VargElement,
 } from "../types";
+import { audioMixVolume, renderAudio } from "./audio";
 import { burnCaptions } from "./burn-captions";
 import { type CaptionsResult, renderCaptions } from "./captions";
 import { renderClip } from "./clip";
@@ -254,7 +255,10 @@ export async function renderRoot(
   // offset later, after clipStartOffsets are computed.
   // ---------------------------------------------------------------------------
   interface DeferredAudio {
-    element: VargElement<"speech"> | VargElement<"music">;
+    element:
+      | VargElement<"speech">
+      | VargElement<"music">
+      | VargElement<"audio">;
     clipIndex: number; // first leaf clip of the container
   }
   const deferredAudioElements: DeferredAudio[] = [];
@@ -335,9 +339,16 @@ export async function renderRoot(
           element: el as VargElement<"captions">,
           clipIndex: firstLeafClipIndex,
         });
-      } else if (el.type === "speech" || el.type === "music") {
+      } else if (
+        el.type === "speech" ||
+        el.type === "music" ||
+        el.type === "audio"
+      ) {
         deferredAudioElements.push({
-          element: el as VargElement<"speech"> | VargElement<"music">,
+          element: el as
+            | VargElement<"speech">
+            | VargElement<"music">
+            | VargElement<"audio">,
           clipIndex: firstLeafClipIndex,
         });
       }
@@ -375,6 +386,14 @@ export async function renderRoot(
       audioTracks.push({
         path,
         mixVolume: speechProps.volume ?? 1,
+      });
+    } else if (childElement.type === "audio") {
+      // Render-level derived audio node — immediate audio track
+      const file = await renderAudio(childElement as VargElement<"audio">, ctx);
+      const path = await ctx.backend.resolvePath(file);
+      audioTracks.push({
+        path,
+        mixVolume: audioMixVolume(childElement as VargElement<"audio">),
       });
     } else if (childElement.type === "music") {
       musicElements.push(childElement as VargElement<"music">);
@@ -533,6 +552,14 @@ export async function renderRoot(
         path,
         start: offset,
         mixVolume: speechProps.volume ?? 1,
+      });
+    } else if (audioElement.type === "audio") {
+      const file = await renderAudio(audioElement as VargElement<"audio">, ctx);
+      const path = await ctx.backend.resolvePath(file);
+      audioTracks.push({
+        path,
+        start: offset,
+        mixVolume: audioMixVolume(audioElement as VargElement<"audio">),
       });
     } else if (audioElement.type === "music") {
       const musicProps = audioElement.props as MusicProps;

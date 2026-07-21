@@ -26,6 +26,7 @@ export type VargElementType =
   | "image"
   | "video"
   | "speech"
+  | "audio"
   | "talking-head"
   | "title"
   | "subtitle"
@@ -154,7 +155,11 @@ export type VideoPrompt =
   | {
       text?: string;
       images?: ImageInput[];
-      audio?: Uint8Array | string | VargElement<"speech">;
+      audio?:
+        | Uint8Array
+        | string
+        | VargElement<"speech">
+        | VargElement<"audio">;
       video?: Uint8Array | string | VargElement<"video">;
     };
 
@@ -168,6 +173,17 @@ export type VideoProps = BaseProps &
     resize?: ResizeMode;
     cropPosition?: CropPosition;
     aspectRatio?: `${number}:${number}`;
+    /**
+     * Native audio sugar. `audio: "native"` expands to
+     * `generate_audio: true` in the model's provider options **and**
+     * `keepAudio: true` — the provider generates audio and it is kept
+     * in the mix.
+     *
+     * Conflicts (rejected by `compile()` validation):
+     * - `audio: "native"` + `keepAudio: false`
+     * - `audio: "native"` + `providerOptions.*.generate_audio: false`
+     */
+    audio?: "native";
     /** Provider-specific options (e.g., fal: { generate_audio: true }) */
     providerOptions?: SharedV3ProviderOptions;
   };
@@ -182,7 +198,7 @@ export interface SpeechProps extends BaseProps, VolumeProps {
    * - `string` — single text, generates one audio track.
    * - `string[]` — multiple segments, generates one audio track with word-level
    *   timing. The resolved element exposes `.segments` with per-entry start/end
-   *   timestamps and lazy `.audio()` slicing.
+   *   timestamps and pre-sliced per-segment audio files.
    *
    * @example
    * ```tsx
@@ -190,21 +206,42 @@ export interface SpeechProps extends BaseProps, VolumeProps {
    * const audio = await Speech({ children: "Hello world" });
    *
    * // Array segments — one API call, segments computed from alignment
-   * const audio = await Speech({
+   * const { audio, segments } = await Speech({
    *   children: ["Welcome.", "Main content.", "Thanks."]
    * });
-   * audio.segments[0].duration  // 2.1
-   * audio.segments[0].audio()   // Promise<Uint8Array> (ffmpeg slice)
+   * segments[0].duration  // 2.1
+   * segments[0]           // ResolvedElement<"speech"> — clip child / prompt.audio
+   * audio                 // AudioNode — clip child, Captions src, .transcribe()
    * ```
    */
   children?: string | string[];
 }
 
+/**
+ * Props for the derived Audio element (`video.audio`, `speech.audio`).
+ * Audio elements are created via the `.audio` getter, not directly by users,
+ * but they can appear anywhere a speech element is accepted (clip children,
+ * `prompt.audio`, `Captions src`).
+ */
+export interface AudioElementProps extends BaseProps, VolumeProps {
+  /**
+   * The element this audio is derived from (video, talking-head, or speech).
+   * For video parents the audio track is extracted via ffmpeg;
+   * for speech parents the audio file is reused as-is.
+   */
+  parent?:
+    | VargElement<"video">
+    | VargElement<"talking-head">
+    | VargElement<"speech">;
+  /** Direct audio source (URL or local path) — alternative to `parent`. */
+  src?: string;
+}
+
 export interface TalkingHeadProps extends BaseProps {
   /** Pre-resolved or lazy image element to use as the character face. */
   image?: VargElement<"image">;
-  /** Pre-resolved or lazy speech element to use as the audio track. */
-  audio?: VargElement<"speech">;
+  /** Pre-resolved or lazy speech/audio element to use as the audio track. */
+  audio?: VargElement<"speech"> | VargElement<"audio">;
   /** Lipsync video model (e.g. fal.videoModel("sync-v2-pro")). */
   model?: VideoModelV3;
   /** Separate lipsync model override (defaults to `model`). */
@@ -253,7 +290,7 @@ export type MusicProps = BaseProps &
   };
 
 export interface CaptionsProps extends BaseProps {
-  src?: string | VargElement<"speech">;
+  src?: string | VargElement<"speech"> | VargElement<"audio">;
   srt?: string;
   style?: "tiktok" | "karaoke" | "bounce" | "typewriter";
   position?: "top" | "center" | "bottom";
@@ -518,6 +555,7 @@ export interface ElementPropsMap {
   image: ImageProps;
   video: VideoProps;
   speech: SpeechProps;
+  audio: AudioElementProps;
   "talking-head": TalkingHeadProps;
   title: TitleProps;
   subtitle: SubtitleProps;

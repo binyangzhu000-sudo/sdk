@@ -462,18 +462,31 @@ export async function renderCaptions(
     if (typeof props.src === "string") {
       srtContent = await Bun.file(props.src).text();
       srtPath = props.src;
-    } else if (props.src.type === "speech") {
-      // Use pre-generated file if already resolved, otherwise render
-      const speechFile =
-        props.src instanceof ResolvedElement
-          ? props.src.meta.file
-          : await renderSpeech(props.src, ctx);
+    } else if (props.src.type === "speech" || props.src.type === "audio") {
+      // Use pre-generated file if already resolved, otherwise render.
+      // Audio elements (video.audio / speech.audio) resolve through
+      // renderAudio; speech elements through renderSpeech.
+      let speechFile: Awaited<ReturnType<typeof renderSpeech>>;
+      if (props.src instanceof ResolvedElement) {
+        speechFile = props.src.meta.file;
+      } else if (props.src.type === "audio") {
+        const { renderAudio } = await import("./audio");
+        speechFile = await renderAudio(props.src as VargElement<"audio">, ctx);
+      } else {
+        speechFile = await renderSpeech(
+          props.src as VargElement<"speech">,
+          ctx,
+        );
+      }
       audioPath = await ctx.backend.resolvePath(speechFile);
 
-      // Check if the speech element already has word-level timing from ElevenLabs.
+      // Check if the element already has word-level timing (ElevenLabs
+      // alignment on speech, or inherited by a derived audio node).
       // If so, skip the Whisper transcription step entirely (saves time and cost).
       const nativeWords =
-        props.src instanceof ResolvedElement ? props.src.meta.words : undefined;
+        props.src instanceof ResolvedElement
+          ? props.src.meta.words
+          : props.src.meta?.words;
 
       if (nativeWords && nativeWords.length > 0) {
         // Use native ElevenLabs word timing — same shape as GroqWord
@@ -546,7 +559,7 @@ export async function renderCaptions(
       ctx.tempFiles.push(srtPath);
     } else {
       throw new Error(
-        "Captions src must be a path to SRT file or Speech element",
+        "Captions src must be a path to SRT file, a Speech element, or an audio element (video.audio / speech.audio)",
       );
     }
   } else {

@@ -29,7 +29,12 @@ async function resolveImageInput(
 }
 
 async function resolveAudioInput(
-  input: Uint8Array | string | VargElement<"speech"> | undefined,
+  input:
+    | Uint8Array
+    | string
+    | VargElement<"speech">
+    | VargElement<"audio">
+    | undefined,
   ctx: RenderContext,
 ): Promise<Uint8Array | undefined> {
   if (!input) return undefined;
@@ -38,12 +43,20 @@ async function resolveAudioInput(
     const response = await fetch(toFileUrl(input));
     return new Uint8Array(await response.arrayBuffer());
   }
-  // Resolved speech element — use pre-generated file directly
-  if (input instanceof ResolvedElement && input.type === "speech") {
+  // Resolved speech/audio element — use pre-generated file directly
+  if (
+    input instanceof ResolvedElement &&
+    (input.type === "speech" || input.type === "audio")
+  ) {
     return input.meta.file.arrayBuffer();
   }
   if (input.type === "speech") {
-    const file = await renderSpeech(input, ctx);
+    const file = await renderSpeech(input as VargElement<"speech">, ctx);
+    return file.arrayBuffer();
+  }
+  if (input.type === "audio") {
+    const { renderAudio } = await import("./audio");
+    const file = await renderAudio(input as VargElement<"audio">, ctx);
     return file.arrayBuffer();
   }
   throw new Error(

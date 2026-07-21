@@ -29,10 +29,12 @@ import type {
   SegmentDescriptor,
   WordTiming,
 } from "../speech/types";
+import { extractAudio } from "./pipeline/audio";
 import { computeCacheKey, getTextContent } from "./renderers/utils";
 import { getResolveContext } from "./resolve-context";
 import { ResolvedElement } from "./resolved-element";
 import type {
+  AudioElementProps,
   ImagePrompt,
   ImageProps,
   MusicProps,
@@ -56,7 +58,7 @@ function getLocalCache(): CacheStorage {
 }
 
 /** Get the active cache storage — from context if available, otherwise local fallback. */
-function getActiveCache(): CacheStorage {
+export function getActiveCache(): CacheStorage {
   return getResolveContext()?.cache ?? getLocalCache();
 }
 
@@ -809,12 +811,17 @@ export async function resolveVideoElement(
         typeof promptObj.audio === "object" &&
         "type" in promptObj.audio
       ) {
-        const audioEl = promptObj.audio as VargElement<"speech">;
+        const audioEl = promptObj.audio as VargElement;
         if (audioEl.meta?.file) {
           resolvedAudio = await audioEl.meta.file.arrayBuffer();
+        } else if (audioEl.type === "audio") {
+          const resolved = await resolveAudioElement(
+            audioEl as VargElement<"audio">,
+          );
+          resolvedAudio = await resolved.file.arrayBuffer();
         } else {
           const resolved = await resolveSpeechElement(
-            audioEl,
+            audioEl as VargElement<"speech">,
             audioEl.props as SpeechProps,
           );
           resolvedAudio = await resolved.file.arrayBuffer();
@@ -1105,6 +1112,117 @@ export async function resolveMusicElement(
 }
 
 // ---------------------------------------------------------------------------
+// Audio — derived node (`video.audio`, `speech.audio`)
+// ---------------------------------------------------------------------------
+/**
+ * Resolve an audio element to a ResolvedElement<"audio">.
+ *
+ * - Pre-resolved (meta already set, e.g. from a resolved speech parent) →
+ *   returned as-is.
+ * - Video parent → resolve/reuse the parent video, then extract the audio
+ *   track via ffmpeg -vn (cached at the extraction level).
+ * - Speech parent → resolve the parent speech and reuse its audio file,
+ *   preserving word timings and duration.
+ * - `src` → load the file directly and probe duration.
+ */
+export async function resolveAudioElement(
+  element: VargElement<"audio">,
+): Promise<ResolvedElement<"audio">> {
+  // Already resolved (pre-seeded from a resolved audio-file parent)
+  if (element.meta?.file) {
+    return element instanceof ResolvedElement
+      ? (element as ResolvedElement<"audio">)
+      : new ResolvedElement(element, element.meta);
+  }
+
+  const props = element.props as AudioElementProps;
+
+  if (props.src) {
+    const file = props.src.startsWith("http")
+      ? File.fromUrl(props.src)
+      : File.fromPath(props.src);
+    const duration = await probeDuration(file);
+    return new ResolvedElement(element, { file, duration });
+  }
+
+  const parent = props.parent;
+  if (!parent) {
+    throw new Error("Audio element requires a 'parent' element or 'src'");
+  }
+
+  const parentEl = parent as VargElement;
+
+  if (parentEl.type === "speech") {
+    const meta = parentEl.meta?.file
+      ? parentEl.meta
+      : (
+          await resolveSpeechElement(
+            parentEl as VargElement<"speech">,
+            parentEl.props as SpeechProps,
+          )
+        ).meta;
+    return new ResolvedElement(element, {
+      file: meta.file,
+      duration: meta.duration,
+      words: meta.words,
+    });
+  }
+
+  if (parentEl.type === "video" || parentEl.type === "talking-head") {
+    // Resolve/reuse the parent video
+    let videoMeta = parentEl.meta;
+    if (!videoMeta?.file) {
+      const resolved =
+        parentEl.type === "video"
+          ? await resolveVideoElement(
+              parentEl as VargElement<"video">,
+              parentEl.props as Record<string, unknown>,
+            )
+          : await resolveTalkingHeadElement(
+              parentEl as VargElement<"talking-head">,
+              parentEl.props as TalkingHeadProps,
+            );
+      videoMeta = resolved.meta;
+    }
+
+    // Cache the extraction by the parent's cache key
+    const cache = getActiveCache();
+    const extractKey = depsToKey("extractAudio", computeCacheKey(parentEl));
+    const cached = (await cache.get(extractKey)) as
+      | { uint8Array: Uint8Array; mediaType: string; duration: number }
+      | undefined;
+
+    if (cached) {
+      const file = File.fromGenerated({
+        uint8Array: cached.uint8Array,
+        mediaType: cached.mediaType,
+      }).withMetadata({ type: "speech" });
+      return new ResolvedElement(element, {
+        file,
+        duration: cached.duration,
+      });
+    }
+
+    const audioFile = await extractAudio(videoMeta.file);
+    const duration =
+      (await probeDuration(audioFile)) || videoMeta.duration || 0;
+
+    const bytes = await audioFile.arrayBuffer();
+    await cache.set(extractKey, {
+      uint8Array: bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes),
+      mediaType: "audio/mpeg",
+      duration,
+    });
+
+    return new ResolvedElement(element, { file: audioFile, duration });
+  }
+
+  throw new Error(
+    `Audio element parent must be a video or speech element, got "${parentEl.type}"`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // TalkingHead
 // ---------------------------------------------------------------------------
 /**
@@ -1148,14 +1266,17 @@ export async function resolveTalkingHeadElement(
       : await resolveImageElement(props.image, props.image.props as ImageProps);
   const characterBytes = new Uint8Array(await resolvedImage.file.arrayBuffer());
 
-  // Step 2: Resolve speech — same pattern.
+  // Step 2: Resolve speech/audio — same pattern. Derived audio nodes
+  // (video.audio / speech.audio) resolve through resolveAudioElement.
   const resolvedSpeech =
     props.audio instanceof ResolvedElement
       ? props.audio
-      : await resolveSpeechElement(
-          props.audio,
-          props.audio.props as SpeechProps,
-        );
+      : props.audio.type === "audio"
+        ? await resolveAudioElement(props.audio as VargElement<"audio">)
+        : await resolveSpeechElement(
+            props.audio as VargElement<"speech">,
+            props.audio.props as SpeechProps,
+          );
   const speechBytes = new Uint8Array(await resolvedSpeech.file.arrayBuffer());
 
   // Step 3: Generate lipsync video (image + audio → video)

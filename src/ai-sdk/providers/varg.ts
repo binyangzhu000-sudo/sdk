@@ -68,6 +68,52 @@ function getHeaders(apiKey: string): Record<string, string> {
   };
 }
 
+/**
+ * The varg API expects `provider_options` to be namespaced by the underlying
+ * provider: `{ fal: { generate_audio: true } }`. The API deep-merges only
+ * `provider_options.<provider_options_key>` into the provider payload —
+ * a flat bag like `{ generate_audio: true }` is silently dropped server-side.
+ *
+ * This validates the shape and warns once per process when a flat bag is
+ * detected, so callers learn their options are a no-op instead of silently
+ * getting default behavior.
+ */
+const KNOWN_UNDERLYING_PROVIDERS = new Set([
+  "fal",
+  "together",
+  "rendi",
+  "groq",
+  "elevenlabs",
+  "higgsfield",
+  "piapi",
+  "heygen",
+  "replicate",
+]);
+
+let warnedFlatProviderOptions = false;
+
+function checkVargProviderOptions(
+  opts: Record<string, unknown>,
+): Record<string, unknown> {
+  const keys = Object.keys(opts);
+  const hasProviderKey = keys.some(
+    (k) =>
+      KNOWN_UNDERLYING_PROVIDERS.has(k) &&
+      typeof opts[k] === "object" &&
+      opts[k] !== null,
+  );
+  if (keys.length > 0 && !hasProviderKey && !warnedFlatProviderOptions) {
+    warnedFlatProviderOptions = true;
+    console.warn(
+      `[varg] providerOptions.varg contains no provider namespace (keys: ${keys.join(", ")}). ` +
+        `The varg API only forwards options nested under a provider key, e.g. ` +
+        `providerOptions: { varg: { fal: { generate_audio: true } } }. ` +
+        `Flat options are dropped by the API.`,
+    );
+  }
+  return opts;
+}
+
 // /v2 job shape (routes/varg_jobs/common.ts serializeVargJob). The create
 // response wraps this with `urls: { self, refresh, status, cancel, retry }`.
 // The poll response (GET /v2/jobs/:id) is the same shape, possibly with
@@ -282,7 +328,9 @@ class VargVideoModel implements VideoModelV3 {
     }
 
     if (options.providerOptions?.varg) {
-      params.provider_options = options.providerOptions.varg;
+      params.provider_options = checkVargProviderOptions(
+        options.providerOptions.varg as Record<string, unknown>,
+      );
     }
 
     const result = await executeJob(this.baseUrl, this.apiKey, "video", params);
@@ -340,7 +388,9 @@ class VargImageModel implements ImageModelV3 {
     }
 
     if (options.providerOptions?.varg) {
-      params.provider_options = options.providerOptions.varg;
+      params.provider_options = checkVargProviderOptions(
+        options.providerOptions.varg as Record<string, unknown>,
+      );
     }
 
     const result = await executeJob(this.baseUrl, this.apiKey, "image", params);
@@ -412,7 +462,9 @@ class VargMusicModel implements MusicModelV3 {
     };
     if (options.duration) params.duration = options.duration;
     if (options.providerOptions?.varg) {
-      params.provider_options = options.providerOptions.varg;
+      params.provider_options = checkVargProviderOptions(
+        options.providerOptions.varg as Record<string, unknown>,
+      );
     }
 
     const result = await executeJob(this.baseUrl, this.apiKey, "music", params);
