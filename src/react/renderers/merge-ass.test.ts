@@ -231,3 +231,17 @@ describe("mergeAssFiles", () => {
     ]);
   });
 });
+
+describe("uniqueTempPath (regression: Date.now collision)", () => {
+  test("rapid successive calls never collide", async () => {
+    const { uniqueTempPath } = await import("./utils");
+    // Memoized transcripts made 12 caption conversions land in the same
+    // millisecond — Date.now()-only paths collided (12 clips -> 7 files)
+    // and clips displayed each other's captions.
+    const paths = new Set<string>();
+    for (let i = 0; i < 100; i++) {
+      paths.add(uniqueTempPath("varg-captions", "ass"));
+    }
+    expect(paths.size).toBe(100);
+  });
+});

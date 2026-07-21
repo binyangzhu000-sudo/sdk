@@ -40,6 +40,7 @@ import {
   getSpaceWidth,
   parseASSSegments,
 } from "./text-measure";
+import { uniqueTempPath } from "./utils";
 
 export interface CaptionsResult {
   assPath: string;
@@ -154,7 +155,7 @@ export async function renderCaptions(
         srtHasEmoji,
         spacesPerEmoji,
       );
-  const assPath = `/tmp/varg-captions-${Date.now()}.ass`;
+  const assPath = uniqueTempPath("varg-captions", "ass");
   writeFileSync(assPath, assContent);
   ctx.tempFiles.push(assPath);
 
@@ -238,7 +239,7 @@ async function resolveSrtContent(
     const { words } = await maybeNode.transcribe();
     if (words && words.length > 0) {
       const srtContent = convertToSRT(words as GroqWord[]);
-      const srtPath = `/tmp/varg-captions-${Date.now()}.srt`;
+      const srtPath = uniqueTempPath("varg-captions", "srt");
       writeFileSync(srtPath, srtContent);
       ctx.tempFiles.push(srtPath);
       return { srtContent, srtPath, audioPath };
@@ -253,7 +254,7 @@ async function resolveSrtContent(
 
   if (nativeWords && nativeWords.length > 0) {
     const srtContent = convertToSRT(nativeWords as GroqWord[]);
-    const srtPath = `/tmp/varg-captions-${Date.now()}.srt`;
+    const srtPath = uniqueTempPath("varg-captions", "srt");
     writeFileSync(srtPath, srtContent);
     ctx.tempFiles.push(srtPath);
     return { srtContent, srtPath, audioPath };
@@ -304,7 +305,7 @@ async function resolveSrtContent(
     words && words.length > 0
       ? convertToSRT(words)
       : `1\n00:00:00,000 --> 00:00:05,000\n${fallbackText}\n`;
-  const srtPath = `/tmp/varg-captions-${Date.now()}.srt`;
+  const srtPath = uniqueTempPath("varg-captions", "srt");
   writeFileSync(srtPath, srtContent);
   ctx.tempFiles.push(srtPath);
 

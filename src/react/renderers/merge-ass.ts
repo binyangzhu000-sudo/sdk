@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import type { CaptionWindow } from "./flatten";
+import { uniqueTempPath } from "./utils";
 
 export interface AssSegment {
   assPath: string;
@@ -109,7 +110,7 @@ export function shiftAssTimestamps(
     .split("\n")
     .filter((line) => !line.startsWith(DROP))
     .join("\n");
-  const outPath = `/tmp/varg-shifted-captions-${Date.now()}.ass`;
+  const outPath = uniqueTempPath("varg-shifted-captions", "ass");
   writeFileSync(outPath, shifted);
   return outPath;
 }
@@ -196,7 +197,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 ${allDialogues.join("\n")}
 `;
 
-  const outPath = `/tmp/varg-merged-captions-${Date.now()}.ass`;
+  const outPath = uniqueTempPath("varg-merged-captions", "ass");
   writeFileSync(outPath, header);
   return outPath;
 }
