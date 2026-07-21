@@ -13,6 +13,8 @@ export { extractAudio } from "./extract";
 export {
   computeSoundBounds,
   detectSilence,
+  type RefineWordTimingsOptions,
+  refineWordTimings,
   type SilenceDetectOptions,
   type TimeRange,
 } from "./silence";

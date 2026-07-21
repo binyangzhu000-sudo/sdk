@@ -225,6 +225,26 @@ async function resolveSrtContent(
   }
   const audioPath = await ctx.backend.resolvePath(speechFile);
 
+  // AudioNode src (video.audio / speech.audio) — use the node's own
+  // memoized transcribe(): shares one whisper call + silence-refined
+  // boundaries with speechRange(), so captions and auto-trim agree on
+  // when speech starts (whisper alone absorbs leading ambience into the
+  // first word, putting captions on screen before anyone speaks).
+  const maybeNode = props.src as Partial<import("../audio-element").AudioNode>;
+  if (
+    props.src.type === "audio" &&
+    typeof maybeNode.transcribe === "function"
+  ) {
+    const { words } = await maybeNode.transcribe();
+    if (words && words.length > 0) {
+      const srtContent = convertToSRT(words as GroqWord[]);
+      const srtPath = `/tmp/varg-captions-${Date.now()}.srt`;
+      writeFileSync(srtPath, srtContent);
+      ctx.tempFiles.push(srtPath);
+      return { srtContent, srtPath, audioPath };
+    }
+  }
+
   // Check for native word timings (ElevenLabs alignment) — skip Whisper if present
   const nativeWords =
     props.src instanceof ResolvedElement

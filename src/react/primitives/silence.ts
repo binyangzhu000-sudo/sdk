@@ -101,6 +101,68 @@ function parseSilenceRanges(stderr: string): TimeRange[] {
   return ranges;
 }
 
+export interface RefineWordTimingsOptions {
+  /**
+   * Minimum remaining duration of the first/last word after clamping,
+   * in seconds. Default 0.05.
+   */
+  minWordDuration?: number;
+}
+
+/**
+ * Refine whisper word timings against measured silence intervals.
+ *
+ * Whisper is a seq2seq transcriber, not a frame-level speech detector: its
+ * word timestamps come from attention alignment, and leading silence/noise
+ * frames have no tokens of their own — their attention mass is absorbed by
+ * the FIRST word, which gets `start = 0` even when speech begins ~1s in
+ * (the ep5 case: "I" at 0.000 under a second of footsteps/ambience).
+ * The tail is symmetric: the last word's `end` stretches toward EOF.
+ *
+ * ffmpeg silencedetect measures signal energy directly, so silence knows
+ * the truth whisper lost. Rules:
+ * - leading silence [0, T): clamp `words[0].start` up to
+ *   `min(T, words[0].end − minWordDuration)`
+ * - trailing silence [S, duration]: clamp `words[last].end` down to
+ *   `max(S, words[last].start + minWordDuration)`
+ * - middle words are never touched (ambient noise between words must not
+ *   fragment speech)
+ *
+ * No leading/trailing silence found → no-op. Returns new objects; input
+ * is not mutated.
+ */
+export function refineWordTimings<W extends { start: number; end: number }>(
+  words: W[],
+  silences: TimeRange[],
+  duration: number,
+  options: RefineWordTimingsOptions = {},
+): W[] {
+  if (words.length === 0) return words;
+  const minWord = options.minWordDuration ?? 0.05;
+  const result = words.map((w) => ({ ...w }));
+
+  for (const s of silences) {
+    // Leading silence: starts at (or near) 0 and covers the first word's start
+    if (s.start <= 0.05) {
+      const first = result[0]!;
+      if (first.start < s.end) {
+        first.start = Math.min(
+          s.end,
+          Math.max(first.start, first.end - minWord),
+        );
+      }
+    }
+    // Trailing silence: runs to (or near) EOF and covers the last word's end
+    if (duration > 0 && s.end >= duration - 0.05) {
+      const last = result[result.length - 1]!;
+      if (last.end > s.start) {
+        last.end = Math.max(s.start, Math.min(last.end, last.start + minWord));
+      }
+    }
+  }
+  return result;
+}
+
 /**
  * Compute the bounds of audible content: `start` of the first sound and
  * `end` of the last sound, derived from silence intervals.
