@@ -37,6 +37,7 @@ async function prepare(
     backend,
     cache,
     storage: options.storage,
+    defaults: options.defaults,
   };
 
   // Resolve lazy elements (from async components) within the resolve context.

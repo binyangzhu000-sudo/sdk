@@ -28,6 +28,7 @@ import {
   transcribeAudio,
 } from "./primitives/audio";
 import { getActiveCache, resolveAudioElement } from "./resolve";
+import { getResolveContext } from "./resolve-context";
 import type { ResolvedElement } from "./resolved-element";
 import type { AudioElementProps, VargElement } from "./types";
 
@@ -125,7 +126,14 @@ export function makeAudioNode(props: AudioElementProps): AudioNode {
     if (words && words.length > 0) {
       return { text: joinWords(words), words };
     }
-    return transcribeAudio(resolved.meta.file, { cache: getActiveCache() });
+    // Use the render-level transcription default (gateway whisper) when
+    // available; falls back to direct Groq whisper-large-v3 inside
+    // transcribeAudio() if neither is set.
+    const model = getResolveContext()?.defaults?.transcription;
+    return transcribeAudio(resolved.meta.file, {
+      cache: getActiveCache(),
+      ...(model ? { model } : {}),
+    });
   };
 
   node.silenceSegments = async (

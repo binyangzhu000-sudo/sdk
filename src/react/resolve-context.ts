@@ -13,6 +13,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { CacheStorage } from "../ai-sdk/cache";
 import type { FFmpegBackend } from "../ai-sdk/providers/editly/backends";
 import type { StorageProvider } from "../ai-sdk/storage/types";
+import type { DefaultModels } from "./types";
 
 /** Context available to standalone resolve functions during rendering. */
 export interface ResolveContext {
@@ -22,6 +23,8 @@ export interface ResolveContext {
   cache?: CacheStorage;
   /** Storage provider for uploading files (cloud backends). */
   storage?: StorageProvider;
+  /** Default models from RenderOptions — used for transcription fallback. */
+  defaults?: DefaultModels;
 }
 
 const resolveContextStorage = new AsyncLocalStorage<ResolveContext>();
