@@ -1,0 +1,124 @@
+/**
+ * Silence detection — find quiet intervals in an audio file via ffmpeg
+ * `silencedetect` filter, and compute the bounds of audible content.
+ */
+
+import { $ } from "bun";
+import type { File } from "../../ai-sdk/file";
+import { getResolveContext } from "../resolve-context";
+
+export interface SilenceDetectOptions {
+  /** Noise threshold in dB — audio below this level counts as silence. Default -30. */
+  noiseDb?: number;
+  /** Minimum silence duration in seconds to report. Default 0.3. */
+  minDuration?: number;
+}
+
+export interface TimeRange {
+  start: number;
+  end: number;
+}
+
+/**
+ * Detect intervals of silence in an audio file via ffmpeg `silencedetect`.
+ *
+ * Note: silencedetect finds *sound*, not speech — ambient noise and
+ * footsteps count as sound. For speech-specific boundaries combine with
+ * `transcribeAudio()` word timings.
+ *
+ * Runs local ffmpeg only (silencedetect output is on stderr, which cloud
+ * backends don't return). Reads URLs directly when available.
+ *
+ * @throws Error if a cloud backend is active (silencedetect requires local
+ *         ffmpeg stderr parsing, which cloud backends don't support).
+ */
+export async function detectSilence(
+  file: File,
+  options: SilenceDetectOptions = {},
+): Promise<TimeRange[]> {
+  const ctx = getResolveContext();
+  if (ctx?.backend && ctx.backend.name !== "local") {
+    throw new Error(
+      `detectSilence requires local ffmpeg — cloud backend "${ctx.backend.name}" does not support silencedetect (stderr parsing). ` +
+        `Run this operation outside the render pipeline or use a local backend.`,
+    );
+  }
+
+  const noiseDb = options.noiseDb ?? -30;
+  const minDuration = options.minDuration ?? 0.3;
+  const isUrlInput = file.url != null;
+  const input = file.url ?? (await file.toTempFile());
+  try {
+    const result =
+      await $`ffmpeg -i ${input} -af silencedetect=noise=${noiseDb}dB:d=${minDuration} -f null -`
+        .quiet()
+        .nothrow();
+    // silencedetect logs to stderr; ffmpeg exits 0 on success for -f null
+    const stderr = result.stderr.toString();
+
+    return parseSilenceRanges(stderr);
+  } finally {
+    if (!isUrlInput) {
+      try {
+        await Bun.file(input).delete?.();
+      } catch {
+        /* ignore cleanup errors */
+      }
+    }
+  }
+}
+
+/** Parse ffmpeg silencedetect stderr output into TimeRange[]. */
+function parseSilenceRanges(stderr: string): TimeRange[] {
+  const ranges: TimeRange[] = [];
+  let currentStart: number | undefined;
+  for (const line of stderr.split("\n")) {
+    const startMatch = line.match(/silence_start:\s*([\d.]+)/);
+    if (startMatch?.[1]) {
+      currentStart = Number.parseFloat(startMatch[1]);
+      continue;
+    }
+    const endMatch = line.match(/silence_end:\s*([\d.]+)/);
+    if (endMatch?.[1] && currentStart !== undefined) {
+      ranges.push({
+        start: currentStart,
+        end: Number.parseFloat(endMatch[1]),
+      });
+      currentStart = undefined;
+    }
+  }
+  // Trailing silence (silence_start without silence_end — runs to EOF)
+  if (currentStart !== undefined) {
+    const durationMatch = stderr.match(/Duration:\s*(\d+):(\d+):([\d.]+)/);
+    if (durationMatch) {
+      const total =
+        Number.parseInt(durationMatch[1] ?? "0", 10) * 3600 +
+        Number.parseInt(durationMatch[2] ?? "0", 10) * 60 +
+        Number.parseFloat(durationMatch[3] ?? "0");
+      ranges.push({ start: currentStart, end: total });
+    }
+  }
+  return ranges;
+}
+
+/**
+ * Compute the bounds of audible content: `start` of the first sound and
+ * `end` of the last sound, derived from silence intervals.
+ *
+ * @param duration Total media duration in seconds.
+ */
+export function computeSoundBounds(
+  silences: TimeRange[],
+  duration: number,
+): TimeRange {
+  let start = 0;
+  let end = duration;
+  for (const s of silences) {
+    // Leading silence
+    if (s.start <= 0.05 && s.end > start) start = s.end;
+    // Trailing silence
+    if (duration > 0 && s.end >= duration - 0.05 && s.start < end)
+      end = s.start;
+  }
+  return { start, end: Math.max(start, end) };
+}

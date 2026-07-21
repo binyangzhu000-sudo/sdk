@@ -3,6 +3,7 @@ import { groq } from "@ai-sdk/groq";
 import { experimental_transcribe as transcribe } from "ai";
 import { z } from "zod";
 import { smartJoin } from "../../speech/word-segmenter";
+import { extractWordTimings } from "../pipeline/transcribe";
 import { ResolvedElement } from "../resolved-element";
 import type { CaptionsProps, VargElement } from "../types";
 import { ensureLocalFonts } from "./burn-captions";
@@ -31,10 +32,6 @@ const groqWordSchema = z.object({
   word: z.string(),
   start: z.number(),
   end: z.number(),
-});
-
-const groqResponseSchema = z.object({
-  words: z.array(groqWordSchema).optional(),
 });
 
 type GroqWord = z.infer<typeof groqWordSchema>;
@@ -531,17 +528,7 @@ export async function renderCaptions(
 
           fallbackText = result.text;
 
-          // Extract words: from providerMetadata (gateway) or response body (direct groq)
-          const metaWords = (
-            result.providerMetadata?.varg as { words?: GroqWord[] } | undefined
-          )?.words;
-          if (metaWords && metaWords.length > 0) {
-            words = metaWords;
-          } else {
-            const rawBody = (result.responses[0] as { body?: unknown })?.body;
-            const parsed = groqResponseSchema.safeParse(rawBody);
-            words = parsed.success ? parsed.data.words : undefined;
-          }
+          words = extractWordTimings(result);
         } finally {
           if (transcribeTaskId && ctx.progress)
             completeTask(ctx.progress, transcribeTaskId);
