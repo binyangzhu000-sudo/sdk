@@ -81,7 +81,6 @@ const CHOCOLATE_PHOTOS = [
 // ---------------------------------------------------------------------------
 export default (
   <Render width={1080} height={1920}>
-    {/* @ts-expect-error — async JSX components are resolved via lazy resolution at render time */}
     <Scene
       voice="rachel"
       script="I am Strawberry. I am fresh, I am sweet, I am the queen of every dessert. You see me on cakes, in smoothies, dipped in chocolate. Wait, that last one does not count. The point is, everyone loves me. I am summer in a single bite."
@@ -89,7 +88,6 @@ export default (
       style={STRAWBERRY_STYLE}
       photoPrompts={STRAWBERRY_PHOTOS}
     />
-    {/* @ts-expect-error — async JSX components are resolved via lazy resolution at render time */}
     <Scene
       voice="adam"
       script="Please. I am Chocolate. I have been royalty for three thousand years. The Aztecs called me the food of the gods. You are a seasonal fruit. I am eternal. I am in your birthday cake, your midnight craving. There is no contest."

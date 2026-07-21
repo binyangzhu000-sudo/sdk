@@ -24,12 +24,15 @@ export {
   Video,
 } from "./elements";
 export { compile } from "./ir/compile";
+export { type ExecuteOptions, executePlan } from "./ir/execute";
 export {
   CompiledPlan,
+  CompileError,
   type Diagnostic,
   type OpKind,
   type SerializedPlan,
   type Step,
+  type StepEvent,
   type StepId,
   type StepStatus,
 } from "./ir/types";
@@ -39,7 +42,7 @@ export type {
   TimeRange,
   TranscriptionResult,
 } from "./pipeline/audio";
-export { render, renderStream } from "./render";
+export { type RenderStreamEvent, render, renderStream } from "./render";
 export { resolveLazy } from "./renderers/resolve-lazy";
 export { type ResolveContext, withResolveContext } from "./resolve-context";
 export { ResolvedElement } from "./resolved-element";

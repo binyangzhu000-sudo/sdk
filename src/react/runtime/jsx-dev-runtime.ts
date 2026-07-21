@@ -52,6 +52,14 @@ export const Fragment = ({ children }: { children?: VargNode }) => children;
 
 export namespace JSX {
   export type Element = VargElement;
+  /**
+   * Valid component types. Includes async components
+   * (`async function Scene(): Promise<VargElement>`) — the runtime wraps
+   * their promise as a `__lazy` element resolved before rendering.
+   */
+  export type ElementType =
+    // biome-ignore lint/suspicious/noExplicitAny: props are validated by each component's own signature
+    (props: any) => VargElement | VargNode | Promise<VargElement | VargNode>;
   // biome-ignore lint/complexity/noBannedTypes: required for JSX namespace
   export type IntrinsicElements = {};
   export interface ElementChildrenAttribute {

@@ -84,6 +84,38 @@ export interface SerializedPlan {
   diagnostics: Diagnostic[];
 }
 
+/** Lifecycle event emitted by `executePlan()` for each step. */
+export interface StepEvent {
+  type:
+    | "plan"
+    | "step-start"
+    | "step-complete"
+    | "step-failed"
+    | "step-skipped";
+  /** The step this event refers to (absent for "plan"). */
+  step?: Step;
+  /** Total number of executable steps (present on "plan"). */
+  totalSteps?: number;
+  /** The failure (present on "step-failed"). */
+  error?: Error;
+}
+
+/** Thrown by render() when compile() finds validation errors. */
+export class CompileError extends Error {
+  readonly diagnostics: Diagnostic[];
+
+  constructor(diagnostics: Diagnostic[]) {
+    const errors = diagnostics.filter((d) => d.severity === "error");
+    super(
+      `Composition failed validation with ${errors.length} error(s):\n${errors
+        .map((d) => `  [${d.code}] ${d.message} (at ${d.path.join(" > ")})`)
+        .join("\n")}`,
+    );
+    this.name = "CompileError";
+    this.diagnostics = diagnostics;
+  }
+}
+
 /** Result of `compile()` — ordered steps plus validation diagnostics. */
 export class CompiledPlan {
   /** Steps in topological order (dependencies before dependents). */

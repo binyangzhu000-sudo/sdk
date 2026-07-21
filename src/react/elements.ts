@@ -59,8 +59,10 @@ function createElement<T extends VargElement["type"]>(
  * - With `await`: triggers AI generation and returns a ResolvedElement
  *   with `.duration`, `.file`, and `.meta` populated.
  *
- * The `.then()` is consumed on first call (deleted) to prevent
- * double-resolution if the element is re-awaited.
+ * The resolution promise is memoized: re-awaiting the same element returns
+ * the same ResolvedElement without re-triggering generation. The resolved
+ * meta is also written back onto the element so the render pipeline sees
+ * it as pre-resolved.
  */
 function makeThenable<T extends VargElement["type"]>(
   element: VargElement<T>,
@@ -70,11 +72,17 @@ function makeThenable<T extends VargElement["type"]>(
     then?: PromiseLike<ResolvedElement<T>>["then"];
   };
 
+  let resolvedPromise: Promise<ResolvedElement<T>> | undefined;
+
   // biome-ignore lint/suspicious/noThenProperty: intentional — makes element awaitable
   thenable.then = function (resolve, reject) {
-    // Remove .then to prevent double-resolution
-    delete this.then;
-    return resolver(this as VargElement<T>).then(resolve, reject);
+    resolvedPromise ??= resolver(this as VargElement<T>).then((r) => {
+      // Mirror meta onto the original element so the render pipeline
+      // treats it as pre-resolved (single generation per element).
+      element.meta = r.meta;
+      return r;
+    });
+    return resolvedPromise.then(resolve, reject);
   };
 
   return thenable as VargElement<T> & PromiseLike<ResolvedElement<T>>;

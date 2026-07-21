@@ -91,10 +91,24 @@ function toImageModelV3(
   };
 }
 
-export async function renderRoot(
+/** RenderContext plus the render-scoped state renderRoot needs alongside it. */
+export interface PreparedRender {
+  ctx: RenderContext;
+  progress: ReturnType<typeof createProgressTracker>;
+  mode: RenderMode;
+  placeholderCount: { images: number; videos: number; total: number };
+}
+
+/**
+ * Build the RenderContext (cached+wrapped generators, backend, progress)
+ * for a composition. Shared by the plan executor and the compose phase so
+ * both see the same pendingFiles dedup map, progress tracker, and
+ * generatedFiles list.
+ */
+export function createRenderContext(
   element: VargElement<"render">,
   options: RenderOptions,
-): Promise<RenderResult> {
+): PreparedRender {
   const props = element.props as RenderProps;
   const progress = createProgressTracker(options.quiet ?? false);
 
@@ -231,6 +245,29 @@ export async function renderRoot(
     backend,
     generatedFiles,
   };
+
+  return { ctx, progress, mode, placeholderCount };
+}
+
+/**
+ * Compose phase: walk the (already materialized) tree, assemble the
+ * timeline, and run editly + captions burn-in.
+ *
+ * When called via `render()`, every generable element has been executed by
+ * the plan executor and carries `meta` — the per-element renderers inside
+ * only short-circuit on pre-resolved files. Calling renderRoot directly
+ * (without a prepared context) still works: renderers generate on demand,
+ * preserving the legacy recursive behavior.
+ */
+export async function renderRoot(
+  element: VargElement<"render">,
+  options: RenderOptions,
+  prepared?: PreparedRender,
+): Promise<RenderResult> {
+  const props = element.props as RenderProps;
+  const { ctx, progress, mode, placeholderCount } =
+    prepared ?? createRenderContext(element, options);
+  const generatedFiles = ctx.generatedFiles;
 
   const clipElements: VargElement<"clip">[] = [];
   const overlayElements: VargElement<"overlay">[] = [];
