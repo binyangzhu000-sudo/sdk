@@ -47,7 +47,8 @@ describe("lazy element .audio getter", () => {
     const vid = Video({ prompt: "sunset" });
     expect(typeof vid.audio.transcribe).toBe("function");
     expect(typeof vid.audio.silenceSegments).toBe("function");
-    expect(typeof vid.audio.bounds).toBe("function");
+    expect(typeof vid.audio.range).toBe("function");
+    expect(typeof vid.audio.speechRange).toBe("function");
     expect(typeof vid.audio.then).toBe("function");
   });
 
@@ -135,6 +136,46 @@ describe("ResolvedElement .audio getter", () => {
     // Video parent: audio must be extracted, meta not pre-seeded
     expect(audio.meta).toBeUndefined();
     expect(audio.duration).toBe(0);
+  });
+
+  test("speechRange() returns first-word start to last-word end from native words", async () => {
+    const resolved = makeResolved(
+      Speech({ voice: "adam", children: "hi" }),
+      5,
+      [
+        { word: "hello", start: 0.42, end: 0.9 },
+        { word: "there", start: 1.0, end: 1.5 },
+        { word: "world", start: 1.6, end: 2.31 },
+      ],
+    );
+    const range = await resolved.audio.speechRange();
+    expect(range).toEqual({ start: 0.42, end: 2.31 });
+  });
+
+  test("speechRange({ pad }) widens the range, clamped to [0, duration]", async () => {
+    const resolved = makeResolved(
+      Speech({ voice: "adam", children: "hi" }),
+      2.4,
+      [
+        { word: "hello", start: 0.05, end: 0.9 },
+        { word: "world", start: 1.0, end: 2.35 },
+      ],
+    );
+    const range = await resolved.audio.speechRange({ pad: 0.1 });
+    // start: 0.05 - 0.1 clamps to 0; end: 2.35 + 0.1 clamps to 2.4
+    expect(range).toEqual({ start: 0, end: 2.4 });
+  });
+
+  test("speechRange() returns null when transcript has no words", async () => {
+    const resolved = makeResolved(
+      Speech({ voice: "adam", children: "hi" }),
+      3,
+      [], // empty words — pre-seeded, so transcribe() won't call whisper...
+    );
+    // ...but transcribe() falls back to whisper on empty words, so stub it.
+    resolved.audio.transcribe = async () => ({ text: "", words: [] });
+    const range = await resolved.audio.speechRange();
+    expect(range).toBeNull();
   });
 });
 

@@ -5,7 +5,8 @@
  * A lazy, memoized VargElement<"audio"> that:
  * - resolves on `await` (video parent → ffmpeg -vn extraction; speech
  *   parent → reuses the speech audio file + word timings)
- * - exposes analysis helpers: `transcribe()`, `silenceSegments()`, `bounds()`
+ * - exposes analysis helpers: `transcribe()`, `silenceSegments()`, `range()`,
+ *   `speechRange()`
  * - is accepted everywhere a speech element is accepted (clip child,
  *   `prompt.audio`, TalkingHead audio, `Captions src`)
  *
@@ -45,10 +46,23 @@ export interface AudioNode
    */
   silenceSegments(options?: SilenceDetectOptions): Promise<TimeRange[]>;
   /**
-   * Bounds of audible content: start of first sound, end of last sound.
+   * Range of audible content: start of first sound, end of last sound.
    * Derived from `silenceSegments()`.
+   *
+   * Note: this is *sound*, not speech — ambient noise, footsteps, and music
+   * count. For "where do they actually talk", use `speechRange()`.
    */
-  bounds(options?: SilenceDetectOptions): Promise<TimeRange>;
+  range(options?: SilenceDetectOptions): Promise<TimeRange>;
+  /**
+   * Range of actual speech: start of the first spoken word, end of the
+   * last one, from word-level transcription timings (`transcribe()` —
+   * native ElevenLabs alignment when present, whisper otherwise; cached).
+   *
+   * Returns `null` when no speech is detected (empty transcript). Word
+   * boundaries from whisper carry ~±0.1s slack — pass `pad` to widen the
+   * range for soft trims (clamped to [0, duration]).
+   */
+  speechRange(options?: { pad?: number }): Promise<TimeRange | null>;
   /**
    * Duration in seconds. Available synchronously when derived from an
    * already-resolved parent (e.g. `const { audio } = await Speech(...)`);
@@ -121,10 +135,27 @@ export function makeAudioNode(props: AudioElementProps): AudioNode {
     return detectSilence(resolved.meta.file, options);
   };
 
-  node.bounds = async (options?: SilenceDetectOptions): Promise<TimeRange> => {
+  node.range = async (options?: SilenceDetectOptions): Promise<TimeRange> => {
     const resolved = await resolveOnce();
     const silences = await detectSilence(resolved.meta.file, options);
     return computeSoundBounds(silences, resolved.meta.duration);
+  };
+
+  node.speechRange = async (options?: {
+    pad?: number;
+  }): Promise<TimeRange | null> => {
+    const resolved = await resolveOnce();
+    const { words } = await node.transcribe();
+    if (!words || words.length === 0) return null;
+
+    const pad = options?.pad ?? 0;
+    const first = words[0]!;
+    const last = words[words.length - 1]!;
+    const duration = resolved.meta.duration;
+    return {
+      start: Math.max(0, first.start - pad),
+      end: duration > 0 ? Math.min(duration, last.end + pad) : last.end + pad,
+    };
   };
 
   // Sync convenience getters — populated when meta is pre-seeded (resolved

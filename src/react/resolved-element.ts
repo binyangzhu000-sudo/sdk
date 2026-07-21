@@ -63,7 +63,7 @@ export class ResolvedElement<T extends VargElementType = VargElementType> {
    * - Speech parents: an `AudioNode` wrapping the same audio file, preserving
    *   word timings — usable everywhere the speech element was (clip child,
    *   `prompt.audio`, `Captions src`), plus `.transcribe()`, `.silenceSegments()`,
-   *   `.bounds()`.
+   *   `.range()`, `.speechRange()`.
    * - Video parents: an `AudioNode` that extracts the audio track via
    *   ffmpeg on `await`.
    * - Audio elements return themselves.
