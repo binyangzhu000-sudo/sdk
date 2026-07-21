@@ -5,11 +5,38 @@
  * Extracted from render.ts so renderRoot stays a thin orchestrator.
  */
 
-import type { VargElement } from "../types";
+import type { ClipProps, VargElement } from "../types";
 
 export interface HoistedCaption {
   element: VargElement<"captions">;
   clipIndex: number;
+  /**
+   * Trim window of the leaf clip the captions were hoisted from.
+   * Caption cue timings reference the clip's RAW media (whisper transcribes
+   * the untrimmed audio), but the timeline shows [cutFrom, cutTo]. The
+   * caption merge uses this window to re-base, drop, and clamp cues.
+   * Absent for container/render-level captions (untrimmed window).
+   */
+  window?: CaptionWindow;
+}
+
+export interface CaptionWindow {
+  /** Leaf clip's cutFrom (seconds into the raw media). */
+  cutFrom: number;
+  /** Leaf clip's cutTo (seconds into the raw media), if set. */
+  cutTo?: number;
+  /** Leaf clip's timeline duration, if numeric. */
+  duration?: number;
+}
+
+/** Extract the caption trim window from a leaf clip's props. */
+function captionWindow(props: ClipProps): CaptionWindow | undefined {
+  const cutFrom = props.cutFrom;
+  const cutTo = props.cutTo;
+  const duration =
+    typeof props.duration === "number" ? props.duration : undefined;
+  if (cutFrom === undefined && cutTo === undefined) return undefined;
+  return { cutFrom: cutFrom ?? 0, cutTo, duration };
 }
 
 export interface DeferredAudio {
@@ -56,12 +83,14 @@ export function flattenClips(rootChildren: VargElement[]): FlattenResult {
     if (childClips.length === 0) {
       // Leaf clip — hoist captions, keep everything else
       const currentClipIndex = clipIndexCounter++;
+      const window = captionWindow(clipElement.props as ClipProps);
       const kept: typeof clipElement.children = [];
       for (const el of nonClipChildren) {
         if (el.type === "captions") {
           hoistedCaptions.push({
             element: el as VargElement<"captions">,
             clipIndex: currentClipIndex,
+            window,
           });
         } else {
           kept.push(el);

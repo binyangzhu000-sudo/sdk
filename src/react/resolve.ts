@@ -63,6 +63,58 @@ export function getActiveCache(): CacheStorage {
 }
 
 // ---------------------------------------------------------------------------
+// In-flight resolve memoization — one element, one generation
+// ---------------------------------------------------------------------------
+/**
+ * The computation graph invariant: a single VargElement resolves at most
+ * once, no matter how many paths lead to it.
+ *
+ * Without this, N concurrent consumers of a shared element (e.g. 12 async
+ * components whose videos all reference the same location card) each start
+ * their own generation: the `meta?.file` check only catches *finished*
+ * resolves, so concurrent paths all see `undefined` and fire N parallel
+ * API calls (the ep5 incident: 52 jobs for one image, 429 retry storm).
+ *
+ * Keyed by element identity (WeakMap), not cache key — this is graph
+ * semantics, not caching. Two textually identical but distinct elements
+ * stay distinct nodes (the disk cache still collapses them by cacheKey).
+ *
+ * A rejected promise stays memoized, consistent with `makeThenable` and
+ * the renderers' `pendingFiles` — re-awaiting a failed element re-throws
+ * the same error instead of re-spending money.
+ */
+const inFlightResolves = new WeakMap<object, Promise<ResolvedElement<never>>>();
+
+function memoizedElementResolve<T extends VargElement["type"]>(
+  element: VargElement<T>,
+  fn: () => Promise<ResolvedElement<T>>,
+): Promise<ResolvedElement<T>> {
+  // Fast path: already resolved (awaited earlier, or meta written back).
+  if (element.meta?.file) {
+    return Promise.resolve(
+      element instanceof ResolvedElement
+        ? (element as ResolvedElement<T>)
+        : new ResolvedElement(element, element.meta),
+    );
+  }
+
+  const existing = inFlightResolves.get(element);
+  if (existing) return existing as Promise<ResolvedElement<T>>;
+
+  const promise = fn().then((resolved) => {
+    // Write meta back onto the original element so every other path
+    // (renderers, executePlan, compile) sees it as pre-resolved.
+    element.meta = resolved.meta;
+    return resolved;
+  });
+  inFlightResolves.set(
+    element,
+    promise as unknown as Promise<ResolvedElement<never>>,
+  );
+  return promise;
+}
+
+// ---------------------------------------------------------------------------
 // Duration probing — uses backend.ffprobe() when available, local ffprobe otherwise
 // ---------------------------------------------------------------------------
 /** Probe an audio/video file's duration in seconds. Uses backend.ffprobe() when available. */
@@ -404,7 +456,16 @@ function serializeSegment(seg: Segment): CachedSegment {
 // ---------------------------------------------------------------------------
 
 /** Generate speech audio via the AI SDK and return a ResolvedElement with duration metadata. */
-export async function resolveSpeechElement(
+export function resolveSpeechElement(
+  element: VargElement<"speech">,
+  props: SpeechProps,
+): Promise<ResolvedElement<"speech">> {
+  return memoizedElementResolve(element, () =>
+    resolveSpeechElementImpl(element, props),
+  );
+}
+
+async function resolveSpeechElementImpl(
   element: VargElement<"speech">,
   props: SpeechProps,
 ): Promise<ResolvedElement<"speech">> {
@@ -624,7 +685,16 @@ async function resolveImagePrompt(
 }
 
 /** Generate an image via the AI SDK (or load from src) and return a ResolvedElement. */
-export async function resolveImageElement(
+export function resolveImageElement(
+  element: VargElement<"image">,
+  props: ImageProps,
+): Promise<ResolvedElement<"image">> {
+  return memoizedElementResolve(element, () =>
+    resolveImageElementImpl(element, props),
+  );
+}
+
+async function resolveImageElementImpl(
   element: VargElement<"image">,
   props: ImageProps,
 ): Promise<ResolvedElement<"image">> {
@@ -695,7 +765,16 @@ export async function resolveImageElement(
 // Video
 // ---------------------------------------------------------------------------
 /** Generate a video via the AI SDK (or load from src) and return a ResolvedElement. */
-export async function resolveVideoElement(
+export function resolveVideoElement(
+  element: VargElement<"video">,
+  props: Record<string, unknown>,
+): Promise<ResolvedElement<"video">> {
+  return memoizedElementResolve(element, () =>
+    resolveVideoElementImpl(element, props),
+  );
+}
+
+async function resolveVideoElementImpl(
   element: VargElement<"video">,
   props: Record<string, unknown>,
 ): Promise<ResolvedElement<"video">> {
@@ -1073,7 +1152,16 @@ export async function resolveProbeElement(
 // Music
 // ---------------------------------------------------------------------------
 /** Generate music audio via the AI SDK and return a ResolvedElement with duration metadata. */
-export async function resolveMusicElement(
+export function resolveMusicElement(
+  element: VargElement<"music">,
+  props: MusicProps,
+): Promise<ResolvedElement<"music">> {
+  return memoizedElementResolve(element, () =>
+    resolveMusicElementImpl(element, props),
+  );
+}
+
+async function resolveMusicElementImpl(
   element: VargElement<"music">,
   props: MusicProps,
 ): Promise<ResolvedElement<"music">> {
@@ -1125,16 +1213,17 @@ export async function resolveMusicElement(
  *   preserving word timings and duration.
  * - `src` → load the file directly and probe duration.
  */
-export async function resolveAudioElement(
+export function resolveAudioElement(
   element: VargElement<"audio">,
 ): Promise<ResolvedElement<"audio">> {
-  // Already resolved (pre-seeded from a resolved audio-file parent)
-  if (element.meta?.file) {
-    return element instanceof ResolvedElement
-      ? (element as ResolvedElement<"audio">)
-      : new ResolvedElement(element, element.meta);
-  }
+  return memoizedElementResolve(element, () =>
+    resolveAudioElementImpl(element),
+  );
+}
 
+async function resolveAudioElementImpl(
+  element: VargElement<"audio">,
+): Promise<ResolvedElement<"audio">> {
   const props = element.props as AudioElementProps;
 
   if (props.src) {
@@ -1235,7 +1324,16 @@ export async function resolveAudioElement(
  * 2. Resolve the speech from `audio` prop (generate or reuse pre-resolved)
  * 3. Generate lipsync video from image + audio via `model`
  */
-export async function resolveTalkingHeadElement(
+export function resolveTalkingHeadElement(
+  element: VargElement<"talking-head">,
+  props: TalkingHeadProps,
+): Promise<ResolvedElement<"talking-head">> {
+  return memoizedElementResolve(element, () =>
+    resolveTalkingHeadElementImpl(element, props),
+  );
+}
+
+async function resolveTalkingHeadElementImpl(
   element: VargElement<"talking-head">,
   props: TalkingHeadProps,
 ): Promise<ResolvedElement<"talking-head">> {

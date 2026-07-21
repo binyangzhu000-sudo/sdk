@@ -36,7 +36,7 @@ import { createRenderContext, type PreparedRender } from "./context-builder";
 import type { EmojiOverlay } from "./emoji";
 import { type FlattenResult, flattenClips } from "./flatten";
 import { renderImage } from "./image";
-import { mergeAssFiles, shiftAssTimestamps } from "./merge-ass";
+import { mergeAssFiles, shiftAssTimestamps, transformCue } from "./merge-ass";
 import { renderMusic } from "./music";
 import { addTask, completeTask, startTask } from "./progress";
 import { renderSpeech } from "./speech";
@@ -345,26 +345,39 @@ export async function renderRoot(
     for (const {
       element: captionsElement,
       clipIndex,
+      window,
     } of flatten.hoistedCaptions) {
       const result = await renderCaptions(captionsElement, ctx);
       hoistedCaptionsResults.push(result);
 
       if (result.audioPath) {
+        // The audio file covers the RAW (untrimmed) clip — apply the same
+        // trim window so the mixed track matches what's on screen.
         audioTracks.push({
           path: result.audioPath,
           start: clipStartOffsets[clipIndex] ?? 0,
           mixVolume: 1,
+          cutFrom: window?.cutFrom,
+          cutTo:
+            window?.cutTo ??
+            (window && window.duration !== undefined
+              ? window.cutFrom + window.duration
+              : undefined),
         });
       }
     }
 
-    // Merge ASS files: shift timestamps by each clip's start offset
+    // Merge ASS files: re-base cue timestamps from raw-clip time to the
+    // timeline (shift by clip offset minus cutFrom, drop/clamp cues
+    // outside the clip's trim window — see transformCue).
     if (hoistedCaptionsResults.length === 1) {
-      const offset =
-        clipStartOffsets[flatten.hoistedCaptions[0]!.clipIndex] ?? 0;
+      const { clipIndex, window } = flatten.hoistedCaptions[0]!;
+      const offset = clipStartOffsets[clipIndex] ?? 0;
       const assPath = hoistedCaptionsResults[0]!.assPath;
       mergedAssPath =
-        offset > 0 ? shiftAssTimestamps(assPath, offset) : assPath;
+        offset > 0 || window
+          ? shiftAssTimestamps(assPath, offset, window)
+          : assPath;
       if (mergedAssPath !== assPath) {
         ctx.tempFiles.push(mergedAssPath);
       }
@@ -374,6 +387,7 @@ export async function renderRoot(
         timeOffset:
           clipStartOffsets[flatten.hoistedCaptions[i]!.clipIndex] ?? 0,
         styleSuffix: `_${i}`,
+        window: flatten.hoistedCaptions[i]!.window,
       }));
       mergedAssPath = mergeAssFiles(segments, ctx.width, ctx.height);
       ctx.tempFiles.push(mergedAssPath);
@@ -449,20 +463,24 @@ export async function renderRoot(
     }
     const allFontFiles = [...fontFileMap.values()];
 
-    // Collect emoji overlays from all caption results, shifting timing by clip offsets
+    // Collect emoji overlays from all caption results, re-basing timing
+    // from raw-clip time to the timeline (same shift/drop/clamp as cues).
     const allEmojiOverlays: EmojiOverlay[] = [];
     for (let i = 0; i < hoistedCaptionsResults.length; i++) {
       const result = hoistedCaptionsResults[i]!;
-      const offset =
-        clipStartOffsets[flatten.hoistedCaptions[i]!.clipIndex] ?? 0;
+      const { clipIndex, window } = flatten.hoistedCaptions[i]!;
+      const offset = clipStartOffsets[clipIndex] ?? 0;
       for (const overlay of result.emojiOverlays ?? []) {
+        const cue = transformCue(
+          overlay.startTime,
+          overlay.endTime,
+          offset,
+          window,
+        );
+        if (!cue) continue;
         allEmojiOverlays.push(
-          offset > 0
-            ? {
-                ...overlay,
-                startTime: overlay.startTime + offset,
-                endTime: overlay.endTime + offset,
-              }
+          cue.start !== overlay.startTime || cue.end !== overlay.endTime
+            ? { ...overlay, startTime: cue.start, endTime: cue.end }
             : overlay,
         );
       }

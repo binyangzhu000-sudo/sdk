@@ -10,6 +10,22 @@ export function resolvePath(path: string): string {
   return resolve(process.cwd(), path);
 }
 
+let tempCounter = 0;
+
+/**
+ * Collision-free temp file path.
+ *
+ * `Date.now()` alone has millisecond resolution — two renders in the same
+ * millisecond get the SAME path and silently overwrite each other's files.
+ * This bit ep5 hard once caption transcripts became memoized: 12 clips'
+ * ASS files collapsed into 7, and mergeAssFiles composed neighboring
+ * clips' captions over the wrong video. A process-wide counter makes
+ * every path unique regardless of timing.
+ */
+export function uniqueTempPath(prefix: string, ext: string): string {
+  return `/tmp/${prefix}-${Date.now()}-${tempCounter++}.${ext}`;
+}
+
 export function toFileUrl(path: string): string {
   if (path.startsWith("http://") || path.startsWith("https://")) {
     return path;

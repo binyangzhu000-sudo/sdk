@@ -141,6 +141,34 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
 }
 
+/**
+ * Enforce monotonic, non-overlapping entry timings.
+ *
+ * Whisper word timestamps are not guaranteed monotonic — a word's start can
+ * precede the previous word's end (ep5: "I" 3.56-3.72 followed by "can't"
+ * 3.18-3.96). Cue generation trusts these timings, so overlaps leak into
+ * overlapping Dialogue events that ASS renders stacked (two caption lines
+ * on screen at once).
+ *
+ * Rules, in order:
+ * - start is clamped to the previous entry's (adjusted) end
+ * - end is clamped to be >= start (zero-length allowed; grouped rendering
+ *   derives per-word ends from the next word's start anyway)
+ *
+ * Returns new objects; input is not mutated.
+ */
+export function monotonizeEntries(entries: SrtEntry[]): SrtEntry[] {
+  const result: SrtEntry[] = [];
+  let prevEnd = Number.NEGATIVE_INFINITY;
+  for (const entry of entries) {
+    const start = Math.max(entry.start, prevEnd);
+    const end = Math.max(entry.end, start);
+    result.push({ ...entry, start, end });
+    prevEnd = end;
+  }
+  return result;
+}
+
 export function convertSrtToAss(
   srtContent: string,
   style: SubtitleStyle,
@@ -152,7 +180,7 @@ export function convertSrtToAss(
 ): { ass: string; emojiData: EntryEmojiData[] } {
   const assHeader = buildAssHeader(style, width, height);
   const nSpaces = spacesPerEmoji ?? 1;
-  const entries = parseSrt(srtContent);
+  const entries = monotonizeEntries(parseSrt(srtContent));
   const emojiData: EntryEmojiData[] = [];
 
   const assDialogues = entries
@@ -212,7 +240,7 @@ export function convertSrtToAssGrouped(
 ): { ass: string; emojiData: EntryEmojiData[] } {
   const assHeader = buildAssHeader(style, width, height);
   const nSpaces = spacesPerEmoji ?? 1;
-  const entries: SrtEntry[] = parseSrt(srtContent);
+  const entries: SrtEntry[] = monotonizeEntries(parseSrt(srtContent));
   const dialogues: string[] = [];
   const emojiData: EntryEmojiData[] = [];
   const baseColor = style.primaryColor;
