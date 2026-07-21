@@ -142,6 +142,19 @@ describe("compile", () => {
     );
   });
 
+  test("audio native + nested varg.fal.generate_audio false is a validation error", () => {
+    const vid = Video({
+      prompt: "sunset",
+      audio: "native",
+      providerOptions: { varg: { fal: { generate_audio: false } } },
+    });
+    const tree = Render({ children: Clip({ duration: 3, children: vid }) });
+    const plan = compile(tree);
+    expect(plan.errors.some((d) => d.code === "VARG_AUDIO_CONFLICT")).toBe(
+      true,
+    );
+  });
+
   test("audio native alone is valid", () => {
     const vid = Video({ prompt: "sunset", audio: "native" });
     const tree = Render({ children: Clip({ duration: 3, children: vid }) });

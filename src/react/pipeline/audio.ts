@@ -61,25 +61,37 @@ export async function extractAudio(
     return File.fromBuffer(new Uint8Array(data), "audio/mpeg");
   }
 
-  // Fallback: local ffmpeg shell. Reads URLs directly (no full pre-download).
+  // Fallback: local ffmpeg shell. Reads URLs directly (no full pre-download);
+  // for non-URL inputs a temp file is created and cleaned up in finally.
+  const isUrlInput = file.url != null;
   const input = file.url ?? (await file.toTempFile());
-  const result =
-    await $`ffmpeg -y -i ${input} -vn -acodec libmp3lame -q:a 2 ${outPath}`
-      .quiet()
-      .nothrow();
-  if (result.exitCode !== 0) {
-    const stderr = result.stderr.toString().trim();
-    throw new Error(
-      `ffmpeg audio extraction failed (exit ${result.exitCode}): ${stderr || "unknown error"}`,
-    );
-  }
-  const data = await Bun.file(outPath).arrayBuffer();
   try {
-    await Bun.file(outPath).delete?.();
-  } catch {
-    /* ignore cleanup errors */
+    const result =
+      await $`ffmpeg -y -i ${input} -vn -acodec libmp3lame -q:a 2 ${outPath}`
+        .quiet()
+        .nothrow();
+    if (result.exitCode !== 0) {
+      const stderr = result.stderr.toString().trim();
+      throw new Error(
+        `ffmpeg audio extraction failed (exit ${result.exitCode}): ${stderr || "unknown error"}`,
+      );
+    }
+    const data = await Bun.file(outPath).arrayBuffer();
+    try {
+      await Bun.file(outPath).delete?.();
+    } catch {
+      /* ignore cleanup errors */
+    }
+    return File.fromBuffer(new Uint8Array(data), "audio/mpeg");
+  } finally {
+    if (!isUrlInput) {
+      try {
+        await Bun.file(input).delete?.();
+      } catch {
+        /* ignore cleanup errors */
+      }
+    }
   }
-  return File.fromBuffer(new Uint8Array(data), "audio/mpeg");
 }
 
 // ---------------------------------------------------------------------------
@@ -114,44 +126,54 @@ export async function detectSilence(
 ): Promise<TimeRange[]> {
   const noiseDb = options.noiseDb ?? -30;
   const minDuration = options.minDuration ?? 0.3;
+  const isUrlInput = file.url != null;
   const input = file.url ?? (await file.toTempFile());
+  try {
+    const result =
+      await $`ffmpeg -i ${input} -af silencedetect=noise=${noiseDb}dB:d=${minDuration} -f null -`
+        .quiet()
+        .nothrow();
+    // silencedetect logs to stderr; ffmpeg exits 0 on success for -f null
+    const stderr = result.stderr.toString();
 
-  const result =
-    await $`ffmpeg -i ${input} -af silencedetect=noise=${noiseDb}dB:d=${minDuration} -f null -`
-      .quiet()
-      .nothrow();
-  // silencedetect logs to stderr; ffmpeg exits 0 on success for -f null
-  const stderr = result.stderr.toString();
-
-  const ranges: TimeRange[] = [];
-  let currentStart: number | undefined;
-  for (const line of stderr.split("\n")) {
-    const startMatch = line.match(/silence_start:\s*([\d.]+)/);
-    if (startMatch?.[1]) {
-      currentStart = Number.parseFloat(startMatch[1]);
-      continue;
+    const ranges: TimeRange[] = [];
+    let currentStart: number | undefined;
+    for (const line of stderr.split("\n")) {
+      const startMatch = line.match(/silence_start:\s*([\d.]+)/);
+      if (startMatch?.[1]) {
+        currentStart = Number.parseFloat(startMatch[1]);
+        continue;
+      }
+      const endMatch = line.match(/silence_end:\s*([\d.]+)/);
+      if (endMatch?.[1] && currentStart !== undefined) {
+        ranges.push({
+          start: currentStart,
+          end: Number.parseFloat(endMatch[1]),
+        });
+        currentStart = undefined;
+      }
     }
-    const endMatch = line.match(/silence_end:\s*([\d.]+)/);
-    if (endMatch?.[1] && currentStart !== undefined) {
-      ranges.push({
-        start: currentStart,
-        end: Number.parseFloat(endMatch[1]),
-      });
-      currentStart = undefined;
+    // Trailing silence (silence_start without silence_end — runs to EOF)
+    if (currentStart !== undefined) {
+      const durationMatch = stderr.match(/Duration:\s*(\d+):(\d+):([\d.]+)/);
+      if (durationMatch) {
+        const total =
+          Number.parseInt(durationMatch[1] ?? "0", 10) * 3600 +
+          Number.parseInt(durationMatch[2] ?? "0", 10) * 60 +
+          Number.parseFloat(durationMatch[3] ?? "0");
+        ranges.push({ start: currentStart, end: total });
+      }
+    }
+    return ranges;
+  } finally {
+    if (!isUrlInput) {
+      try {
+        await Bun.file(input).delete?.();
+      } catch {
+        /* ignore cleanup errors */
+      }
     }
   }
-  // Trailing silence (silence_start without silence_end — runs to EOF)
-  if (currentStart !== undefined) {
-    const durationMatch = stderr.match(/Duration:\s*(\d+):(\d+):([\d.]+)/);
-    if (durationMatch) {
-      const total =
-        Number.parseInt(durationMatch[1] ?? "0", 10) * 3600 +
-        Number.parseInt(durationMatch[2] ?? "0", 10) * 60 +
-        Number.parseFloat(durationMatch[3] ?? "0");
-      ranges.push({ start: currentStart, end: total });
-    }
-  }
-  return ranges;
 }
 
 /**

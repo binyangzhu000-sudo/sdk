@@ -174,7 +174,7 @@ describe("executePlan", () => {
     const tree = Render({ children: Clip({ duration: 2, children: img }) });
     const plan = compile(tree);
 
-    expect(executePlan(plan, makeCtx())).rejects.toThrow("boom");
+    await expect(executePlan(plan, makeCtx())).rejects.toThrow("boom");
   });
 
   test("throwOnError: false records failure in step status without throwing", async () => {
