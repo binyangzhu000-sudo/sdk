@@ -41,7 +41,7 @@ export type {
   SilenceDetectOptions,
   TimeRange,
   TranscriptionResult,
-} from "./pipeline/audio";
+} from "./primitives/audio";
 export { type RenderStreamEvent, render, renderStream } from "./render";
 export { resolveLazy } from "./renderers/resolve-lazy";
 export { type ResolveContext, withResolveContext } from "./resolve-context";

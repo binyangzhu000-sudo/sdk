@@ -3,7 +3,7 @@ import { groq } from "@ai-sdk/groq";
 import { experimental_transcribe as transcribe } from "ai";
 import { z } from "zod";
 import { smartJoin } from "../../speech/word-segmenter";
-import { extractWordTimings } from "../pipeline/transcribe";
+import { extractWordTimings } from "../primitives/transcribe";
 import { ResolvedElement } from "../resolved-element";
 import type { CaptionsProps, VargElement } from "../types";
 import { ensureLocalFonts } from "./burn-captions";

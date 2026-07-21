@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { File } from "../ai-sdk/file";
 import { Speech, Video } from "./elements";
-import { computeSoundBounds } from "./pipeline/audio";
+import { computeSoundBounds } from "./primitives/audio";
 import { ResolvedElement } from "./resolved-element";
 import type { VargElement } from "./types";
 

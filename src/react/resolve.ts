@@ -29,7 +29,7 @@ import type {
   SegmentDescriptor,
   WordTiming,
 } from "../speech/types";
-import { extractAudio } from "./pipeline/audio";
+import { extractAudio } from "./primitives/audio";
 import { computeCacheKey, getTextContent } from "./renderers/utils";
 import { getResolveContext } from "./resolve-context";
 import { ResolvedElement } from "./resolved-element";

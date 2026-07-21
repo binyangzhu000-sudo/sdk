@@ -21,12 +21,12 @@ import type {
   SilenceDetectOptions,
   TimeRange,
   TranscriptionResult,
-} from "./pipeline/audio";
+} from "./primitives/audio";
 import {
   computeSoundBounds,
   detectSilence,
   transcribeAudio,
-} from "./pipeline/audio";
+} from "./primitives/audio";
 import { getActiveCache, resolveAudioElement } from "./resolve";
 import type { ResolvedElement } from "./resolved-element";
 import type { AudioElementProps, VargElement } from "./types";

@@ -1,5 +1,5 @@
 import { File } from "../../ai-sdk/file";
-import { extractAudio } from "../pipeline/audio";
+import { extractAudio } from "../primitives/audio";
 import { ResolvedElement } from "../resolved-element";
 import type { AudioElementProps, SpeechProps, VargElement } from "../types";
 import type { RenderContext } from "./context";
