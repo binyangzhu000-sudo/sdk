@@ -64,4 +64,8 @@ export namespace JSX {
     // biome-ignore lint/complexity/noBannedTypes: required for JSX namespace
     children: {};
   }
+  /** Attributes accepted on every JSX element (the `key` prop). */
+  export interface IntrinsicAttributes {
+    key?: string | number;
+  }
 }

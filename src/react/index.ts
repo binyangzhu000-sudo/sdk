@@ -9,6 +9,7 @@ export {
   Clip,
   FFmpeg,
   Image,
+  type ImageElement,
   Music,
   Overlay,
   Packshot,
@@ -17,11 +18,13 @@ export {
   Slice,
   Slider,
   Speech,
+  type SpeechElement,
   Subtitle,
   Swipe,
   TalkingHead,
   Title,
   Video,
+  type VideoElement,
 } from "./elements";
 export { compile } from "./ir/compile";
 export { type ExecuteOptions, executePlan } from "./ir/execute";

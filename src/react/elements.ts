@@ -197,9 +197,19 @@ export function Overlay(props: OverlayProps): VargElement<"overlay"> {
   );
 }
 
-export function Image(
-  props: ImageProps,
-): VargElement<"image"> & PromiseLike<ResolvedElement<"image">> {
+/**
+ * Named element types returned by the media factories — for typing user
+ * code (e.g. async component props) without `ReturnType<typeof Video>`
+ * acrobatics.
+ */
+export type ImageElement = VargElement<"image"> &
+  PromiseLike<ResolvedElement<"image">>;
+export type VideoElement = VargElement<"video"> &
+  PromiseLike<ResolvedElement<"video">> & { readonly audio: AudioNode };
+export type SpeechElement = VargElement<"speech"> &
+  PromiseLike<ResolvedElement<"speech">> & { readonly audio: AudioNode };
+
+export function Image(props: ImageProps): ImageElement {
   const element = createElement(
     "image",
     props as Record<string, unknown>,
@@ -210,10 +220,7 @@ export function Image(
   );
 }
 
-export function Video(
-  props: VideoProps,
-): VargElement<"video"> &
-  PromiseLike<ResolvedElement<"video">> & { readonly audio: AudioNode } {
+export function Video(props: VideoProps): VideoElement {
   const element = createElement(
     "video",
     expandNativeAudio(props) as Record<string, unknown>,
@@ -226,10 +233,7 @@ export function Video(
   );
 }
 
-export function Speech(
-  props: SpeechProps,
-): VargElement<"speech"> &
-  PromiseLike<ResolvedElement<"speech">> & { readonly audio: AudioNode } {
+export function Speech(props: SpeechProps): SpeechElement {
   const element = createElement(
     "speech",
     props as Record<string, unknown>,
