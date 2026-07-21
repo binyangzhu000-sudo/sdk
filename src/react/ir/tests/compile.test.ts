@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { File } from "../../ai-sdk/file";
-import { Captions, Clip, Image, Render, Speech, Video } from "../elements";
-import { ResolvedElement } from "../resolved-element";
-import type { VargElement } from "../types";
-import { compile } from "./compile";
-import { topoSort } from "./topo-sort";
-import type { Step } from "./types";
+import { File } from "../../../ai-sdk/file";
+import { Captions, Clip, Image, Render, Speech, Video } from "../../elements";
+import { ResolvedElement } from "../../resolved-element";
+import type { VargElement } from "../../types";
+import { compile } from "../compile";
+import { topoSort } from "../topo-sort";
+import type { Step } from "../types";
 
 function makeStep(id: string, dependsOn: Step[] = []): Step {
   return {

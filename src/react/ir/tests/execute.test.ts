@@ -1,17 +1,17 @@
 import { describe, expect, mock, test } from "bun:test";
-import { File } from "../../ai-sdk/file";
-import { Clip, Image, Render, Video } from "../elements";
-import type { RenderContext } from "../renderers/context";
-import type { VargElement } from "../types";
-import { compile } from "./compile";
-import { executePlan } from "./execute";
-import type { StepEvent } from "./types";
+import { File } from "../../../ai-sdk/file";
+import { Clip, Image, Render, Video } from "../../elements";
+import type { RenderContext } from "../../renderers/context";
+import type { VargElement } from "../../types";
+import { compile } from "../compile";
+import { executePlan } from "../execute";
+import type { StepEvent } from "../types";
 
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 
 function makeMockImageModel(
   onGenerate?: () => void | Promise<void>,
-): NonNullable<import("../types").ImageProps["model"]> {
+): NonNullable<import("../../types").ImageProps["model"]> {
   return {
     specificationVersion: "v3",
     provider: "mock",
@@ -222,8 +222,8 @@ describe("executePlan", () => {
 
 describe("render = compile + execute integration", () => {
   test("render() fails fast with CompileError before generating", async () => {
-    const { render } = await import("../render");
-    const { CompileError } = await import("./types");
+    const { render } = await import("../../render");
+    const { CompileError } = await import("../types");
 
     let calls = 0;
     const model = makeMockImageModel(() => {
@@ -254,7 +254,7 @@ describe("render = compile + execute integration", () => {
   });
 
   test("renderStream yields step events with progress", async () => {
-    const { renderStream } = await import("../render");
+    const { renderStream } = await import("../../render");
     const img = Image({ prompt: "streamed cat", model: makeMockImageModel() });
     const tree = Render({
       width: 320,
