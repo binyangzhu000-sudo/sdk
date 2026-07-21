@@ -68,8 +68,8 @@ export async function detectSilence(
   }
 }
 
-/** Parse ffmpeg silencedetect stderr output into TimeRange[]. */
-function parseSilenceRanges(stderr: string): TimeRange[] {
+/** Parse ffmpeg silencedetect stderr output into TimeRange[]. Exported for speech-activity.ts. */
+export function parseSilenceRanges(stderr: string): TimeRange[] {
   const ranges: TimeRange[] = [];
   let currentStart: number | undefined;
   for (const line of stderr.split("\n")) {

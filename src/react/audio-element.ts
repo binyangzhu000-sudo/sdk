@@ -19,12 +19,15 @@
 import type { WordTiming } from "../speech/types";
 import type {
   SilenceDetectOptions,
+  SpeechActivityOptions,
   TimeRange,
   TranscriptionResult,
 } from "./primitives/audio";
 import {
+  alignWordsToActivity,
   computeSoundBounds,
   detectSilence,
+  detectSpeechActivity,
   refineWordTimings,
   transcribeAudio,
 } from "./primitives/audio";
@@ -167,6 +170,16 @@ export function makeAudioNode(props: AudioElementProps): AudioNode {
       return detectSilence(resolved.meta.file, options);
     });
 
+  const detectActivityOnce = (options?: SpeechActivityOptions) =>
+    memoize(`activity:${JSON.stringify(options ?? {})}`, async () => {
+      const resolved = await resolveOnce();
+      return detectSpeechActivity(
+        resolved.meta.file,
+        resolved.meta.duration,
+        options,
+      );
+    });
+
   node.transcribe = (options?: { refine?: boolean; noiseDb?: number }) =>
     memoize(
       `transcribe:${JSON.stringify(options ?? {})}`,
@@ -187,24 +200,45 @@ export function makeAudioNode(props: AudioElementProps): AudioNode {
           ...(model ? { model } : {}),
         });
 
-        // Refine whisper boundaries against measured silence (default on):
-        // whisper absorbs leading ambience into the first word and
-        // stretches the last word toward EOF. Applied on top of the disk
-        // cache — the raw transcript stays the cached source of truth.
+        // Align whisper boundary words to measured VOICE activity
+        // (default on). Whisper's attention absorbs leading ambience into
+        // the first word and stretches the last toward EOF; broadband
+        // silencedetect can't tell footsteps from speech. A voice-band
+        // (200-3400 Hz) activity signal can: leading words placed wholly
+        // inside ambience are pushed to the voice onset, the last word is
+        // clamped to the voice offset. monotonizeEntries downstream
+        // cascades the shift. Applied on top of the disk cache — the raw
+        // transcript stays the cached source of truth. Falls back to
+        // broadband silence refinement when bandpass detection fails, and
+        // to raw timings when no ffmpeg is available.
         if (options?.refine === false || raw.words.length === 0) return raw;
         try {
+          const activity = await detectActivityOnce({
+            ...(options?.noiseDb !== undefined
+              ? { noiseDb: options.noiseDb }
+              : {}),
+          });
+          if (activity.length > 0) {
+            return {
+              text: raw.text,
+              words: alignWordsToActivity(raw.words, activity),
+            };
+          }
+          // Empty activity (voice below threshold): broadband fallback.
           const silences = await detectSilenceOnce({
             noiseDb: options?.noiseDb ?? -35,
           });
-          const words = refineWordTimings(
-            raw.words,
-            silences,
-            resolved.meta.duration,
-          );
-          return { text: raw.text, words };
+          return {
+            text: raw.text,
+            words: refineWordTimings(
+              raw.words,
+              silences,
+              resolved.meta.duration,
+            ),
+          };
         } catch {
-          // silencedetect unavailable (e.g. cloud backend) — raw timings
-          // are still correct transcription, just unrefined.
+          // ffmpeg unavailable (e.g. cloud backend) — raw timings are
+          // still correct transcription, just unrefined.
           return raw;
         }
       },

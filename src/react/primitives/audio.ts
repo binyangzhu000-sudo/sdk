@@ -19,6 +19,13 @@ export {
   type TimeRange,
 } from "./silence";
 export {
+  alignWordsToActivity,
+  detectSpeechActivity,
+  invertSilences,
+  mergeActivity,
+  type SpeechActivityOptions,
+} from "./speech-activity";
+export {
   extractWordTimings,
   type TranscriptionResult,
   transcribeAudio,

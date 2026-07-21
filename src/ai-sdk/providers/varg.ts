@@ -514,7 +514,13 @@ class VargMusicModel implements MusicModelV3 {
       model: this.modelId,
       prompt: options.prompt,
     };
-    if (options.duration) params.duration = options.duration;
+    // Integer seconds: the API converts to ms by multiplying without
+    // rounding, and ElevenLabs rejects fractional music_length_ms with a
+    // 422 (int_from_float). Fractional seconds also survive float
+    // multiplication badly (88.35 * 1000 = 88349.999...), so rounding to
+    // whole seconds client-side is the only safe shape until the API
+    // rounds server-side. BGM is auto-trimmed to the timeline anyway.
+    if (options.duration) params.duration = Math.round(options.duration);
     if (options.providerOptions?.varg) {
       params.provider_options = checkVargProviderOptions(
         options.providerOptions.varg as Record<string, unknown>,
