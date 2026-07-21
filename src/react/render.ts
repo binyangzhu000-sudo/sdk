@@ -1,21 +1,15 @@
-import { type CacheStorage, withCache } from "../ai-sdk/cache";
-import { fileCache } from "../ai-sdk/file-cache";
 import { localBackend } from "../ai-sdk/providers/editly";
 import { compile } from "./ir/compile";
 import { executePlan } from "./ir/execute";
 import { CompileError, type StepEvent } from "./ir/types";
-import { createRenderContext, renderRoot } from "./renderers/render";
+import {
+  createRenderContext,
+  resolveCacheStorage,
+} from "./renderers/context-builder";
+import { renderRoot } from "./renderers/render";
 import { resolveLazy } from "./renderers/resolve-lazy";
 import { type ResolveContext, withResolveContext } from "./resolve-context";
 import type { RenderOptions, RenderResult, VargElement } from "./types";
-
-function resolveCacheStorage(
-  cache: string | CacheStorage | undefined,
-): CacheStorage | undefined {
-  if (!cache) return undefined;
-  if (typeof cache === "string") return fileCache({ dir: cache });
-  return cache;
-}
 
 interface PreparedPlan {
   resolved: VargElement<"render">;
