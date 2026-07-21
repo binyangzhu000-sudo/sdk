@@ -283,4 +283,49 @@ describe("render = compile + execute integration", () => {
       expect(eventTypes[eventTypes.length - 1]).toBe("complete");
     }
   });
+
+  test("onStep prop fires for each step event", async () => {
+    const { render } = await import("../../render");
+    const stepTypes: string[] = [];
+    const img = Image({ prompt: "hook test", model: makeMockImageModel() });
+    const tree = Render({
+      width: 320,
+      height: 240,
+      onStep: (event) => stepTypes.push(event.type),
+      children: Clip({ duration: 1, children: img }),
+    });
+
+    try {
+      await render(tree, { quiet: true });
+    } catch {
+      // editly may fail in CI — step events fire before compose
+    }
+    expect(stepTypes).toContain("plan");
+    expect(stepTypes).toContain("step-start");
+    expect(stepTypes).toContain("step-complete");
+  });
+
+  test("onError prop fires on compile validation failure", async () => {
+    const { render } = await import("../../render");
+    let caught: Error | undefined;
+    const tree = Render({
+      onError: (err) => {
+        caught = err;
+      },
+      children: Clip({
+        duration: 2,
+        children: Video({
+          prompt: "sunset",
+          audio: "native",
+          keepAudio: false,
+          // biome-ignore lint/suspicious/noExplicitAny: mock model
+          model: { provider: "mock", modelId: "mock-video" } as any,
+        }),
+      }),
+    });
+
+    await render(tree, { quiet: true }).catch(() => {});
+    expect(caught).toBeDefined();
+    expect(caught?.message).toContain("VARG_AUDIO_CONFLICT");
+  });
 });

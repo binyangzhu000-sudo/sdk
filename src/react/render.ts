@@ -77,27 +77,44 @@ export async function render(
   options: RenderOptions = {},
   onStepEvent?: (event: StepEvent) => void,
 ): Promise<RenderResult> {
-  const { resolved, plan, resolveCtx } = await prepare(element, options);
+  // Lifecycle hooks from <Render> props (React-style declarative callbacks).
+  const renderProps = element.props as Partial<{
+    onStep?: (event: StepEvent) => void;
+    onComplete?: (result: RenderResult) => void;
+    onError?: (error: Error) => void;
+  }>;
+  const onStep = onStepEvent ?? renderProps.onStep;
 
-  // One shared context for both phases: executor fills element.meta and
-  // pendingFiles; compose reuses the same files without re-generation.
-  const prepared = createRenderContext(resolved, options);
+  try {
+    const { resolved, plan, resolveCtx } = await prepare(element, options);
 
-  // throwOnError: false — failed steps leave rejected promises in
-  // pendingFiles; the compose phase re-encounters them per clip and
-  // aggregates with legacy "N of M clips failed" semantics, preserving
-  // successful (cached) results.
-  await withResolveContext(resolveCtx, () =>
-    executePlan(plan, prepared.ctx, {
-      concurrency: options.concurrency ?? 3,
-      onEvent: onStepEvent,
-      throwOnError: false,
-    }),
-  );
+    // One shared context for both phases: executor fills element.meta and
+    // pendingFiles; compose reuses the same files without re-generation.
+    const prepared = createRenderContext(resolved, options);
 
-  return withResolveContext(resolveCtx, () =>
-    renderRoot(resolved, options, prepared),
-  );
+    // throwOnError: false — failed steps leave rejected promises in
+    // pendingFiles; the compose phase re-encounters them per clip and
+    // aggregates with legacy "N of M clips failed" semantics, preserving
+    // successful (cached) results.
+    await withResolveContext(resolveCtx, () =>
+      executePlan(plan, prepared.ctx, {
+        concurrency: options.concurrency ?? 3,
+        onEvent: onStep,
+        throwOnError: false,
+      }),
+    );
+
+    const result = await withResolveContext(resolveCtx, () =>
+      renderRoot(resolved, options, prepared),
+    );
+
+    renderProps.onComplete?.(result);
+    return result;
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    renderProps.onError?.(err);
+    throw err;
+  }
 }
 
 export type RenderStreamEvent =

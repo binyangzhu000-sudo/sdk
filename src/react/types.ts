@@ -112,6 +112,12 @@ export interface RenderProps extends BaseProps {
   normalize?: boolean;
   shortest?: boolean;
   children?: VargNode;
+  /** Called after each plan step lifecycle event (start/complete/failed/skipped). */
+  onStep?: (event: import("./ir/types").StepEvent) => void;
+  /** Called after the render completes successfully, with the final video. */
+  onComplete?: (result: RenderResult) => void;
+  /** Called if the render fails at any stage (compile/execute/compose). */
+  onError?: (error: Error) => void;
 }
 
 export interface ClipProps extends BaseProps {
