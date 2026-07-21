@@ -8,9 +8,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { Clip, Render } from "./elements";
-import { resolveLazy } from "./renderers/resolve-lazy";
-import type { VargElement } from "./types";
+import { Clip, Render } from "../elements";
+import { resolveLazy } from "../renderers/resolve-lazy";
+import type { VargElement } from "../types";
 
 /** Async component with props — must typecheck in JSX without workarounds. */
 async function AsyncScene({ duration }: { duration: number }) {

@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { File } from "../ai-sdk/file";
-import { Speech, Video } from "./elements";
-import { computeSoundBounds } from "./primitives/audio";
-import { ResolvedElement } from "./resolved-element";
-import type { VargElement } from "./types";
+import { File } from "../../ai-sdk/file";
+import { Speech, Video } from "../elements";
+import { computeSoundBounds } from "../primitives/audio";
+import { ResolvedElement } from "../resolved-element";
+import type { VargElement } from "../types";
 
 function makeResolved<T extends VargElement["type"]>(
   element: VargElement<T>,
@@ -190,7 +190,7 @@ describe("audio: native sugar", () => {
       model: {
         provider: "fal",
         modelId: "kling-v3",
-      } as unknown as import("./types").VideoProps["model"],
+      } as unknown as import("../types").VideoProps["model"],
     });
     expect(vid.props.keepAudio).toBe(true);
     const po = vid.props.providerOptions as Record<
@@ -207,7 +207,7 @@ describe("audio: native sugar", () => {
       model: {
         provider: "varg",
         modelId: "kling-v3",
-      } as unknown as import("./types").VideoProps["model"],
+      } as unknown as import("../types").VideoProps["model"],
     });
     const po = vid.props.providerOptions as Record<
       string,
@@ -256,7 +256,7 @@ describe("audio: native sugar", () => {
   });
 
   test("cache key unchanged by audio: native expansion vs manual options", async () => {
-    const { computeCacheKey } = await import("./renderers/utils");
+    const { computeCacheKey } = await import("../renderers/utils");
     const manual = Video({
       prompt: "sunset",
       keepAudio: true,
@@ -272,8 +272,8 @@ describe("audio: native sugar", () => {
 // ---------------------------------------------------------------------------
 describe("resolveLazy with audio nodes", () => {
   test("audio node in tree passes through without triggering resolution", async () => {
-    const { resolveLazy } = await import("./renderers/resolve-lazy");
-    const { Render, Clip } = await import("./elements");
+    const { resolveLazy } = await import("../renderers/resolve-lazy");
+    const { Render, Clip } = await import("../elements");
 
     const vid = Video({ prompt: "sunset" });
     const tree = Render({
