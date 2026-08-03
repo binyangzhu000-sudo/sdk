@@ -10,7 +10,7 @@ import { experimental_transcribe as transcribe } from "ai";
 import type { CacheStorage } from "../../ai-sdk/cache";
 import type { File } from "../../ai-sdk/file";
 import type { WordTiming } from "../../speech/types";
-import { getResolveContext } from "../resolve-context";
+import { getActiveLimit, getResolveContext } from "../resolve-context";
 
 export interface TranscriptionResult {
   text: string;
@@ -102,18 +102,24 @@ export async function transcribeAudio(
   // varg API and don't accept groq-specific providerOptions. Direct Groq
   // calls need responseFormat + timestampGranularities for word timings.
   const isGatewayModel = options.model !== undefined;
-  const result = await transcribe({
-    model,
-    audio: data,
-    providerOptions: isGatewayModel
-      ? {}
-      : {
-          groq: {
-            responseFormat: "verbose_json",
-            timestampGranularities: ["word"],
+  // Cache miss — this is a real API call, so it takes a limiter slot.
+  // transcribeAudio hand-rolls its cache instead of using withCache, so
+  // the limit is applied here directly. Transcription was the third leg
+  // of the ep5 fan-out: 12 async components => 12 parallel POSTs (sdk#225).
+  const result = await getActiveLimit()(() =>
+    transcribe({
+      model,
+      audio: data,
+      providerOptions: isGatewayModel
+        ? {}
+        : {
+            groq: {
+              responseFormat: "verbose_json",
+              timestampGranularities: ["word"],
+            },
           },
-        },
-  });
+    }),
+  );
 
   const words = extractWordTimings(result);
   const transcription: TranscriptionResult = { text: result.text, words };

@@ -11,7 +11,7 @@
  */
 
 import {
-  generateImage,
+  generateImage as generateImageRaw,
   experimental_generateSpeech as generateSpeechAI,
 } from "ai";
 import { $ } from "bun";
@@ -31,7 +31,7 @@ import type {
 } from "../speech/types";
 import { extractAudio } from "./primitives/audio";
 import { computeCacheKey, getTextContent } from "./renderers/utils";
-import { getResolveContext } from "./resolve-context";
+import { getActiveLimit, getResolveContext } from "./resolve-context";
 import { ResolvedElement } from "./resolved-element";
 import type {
   AudioElementProps,
@@ -181,26 +181,32 @@ async function trimVideoLocal(
 }
 
 // ---------------------------------------------------------------------------
-// Cached video generation — uses context cache when available
+// Cached generation — uses the context cache and concurrency limit when
+// available. The limiter is passed to withCache rather than wrapped around
+// it, so cache hits resolve immediately instead of queueing for a slot.
 // ---------------------------------------------------------------------------
 /** Get a cached generateVideo wrapper using the active cache storage. */
 function getCachedGenerateVideo() {
-  const ctx = getResolveContext();
-  const storage = ctx?.cache ?? getLocalCache();
-  return withCache(generateVideoRaw, { storage });
+  return withCache(generateVideoRaw, {
+    storage: getActiveCache(),
+    limit: getActiveLimit(),
+  });
 }
 
 /** Get a cached generateMusic wrapper using the active cache storage. */
 function getCachedGenerateMusic() {
-  const ctx = getResolveContext();
-  const storage = ctx?.cache ?? getLocalCache();
-  return withCache(generateMusicRaw, { storage });
+  return withCache(generateMusicRaw, {
+    storage: getActiveCache(),
+    limit: getActiveLimit(),
+  });
 }
 
 /** Get a cached generateSpeech wrapper using the active cache storage. */
 function getCachedGenerateSpeech() {
-  const storage = getActiveCache();
-  return withCache(generateSpeechAI, { storage });
+  return withCache(generateSpeechAI, {
+    storage: getActiveCache(),
+    limit: getActiveLimit(),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -724,16 +730,25 @@ async function resolveImageElementImpl(
   }
 
   const cacheKey = computeCacheKey(element);
+  // Nested image inputs are resolved BEFORE taking a limiter slot — a
+  // parent holding a slot while awaiting a child queued behind it would
+  // deadlock. Same ordering in every resolver below.
   const resolvedPrompt = await resolveImagePrompt(prompt);
 
-  const { images } = await generateImage({
-    model,
-    prompt: resolvedPrompt,
-    aspectRatio: props.aspectRatio,
-    providerOptions: props.providerOptions,
-    n: 1,
-    cacheKey,
-  } as Parameters<typeof generateImage>[0]);
+  // NOTE: this path deliberately calls the RAW generateImage — unlike
+  // video/music/speech it is not withCache-wrapped, so `cacheKey` below is
+  // inert here. Wiring up the cache is a separate behavior change (it would
+  // start persisting standalone image generations); out of scope for #225.
+  const { images } = await getActiveLimit()(() =>
+    generateImageRaw({
+      model,
+      prompt: resolvedPrompt,
+      aspectRatio: props.aspectRatio,
+      providerOptions: props.providerOptions,
+      n: 1,
+      cacheKey,
+    } as Parameters<typeof generateImageRaw>[0]),
+  );
 
   const firstImage = images[0];
   if (!firstImage?.uint8Array) {

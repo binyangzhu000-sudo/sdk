@@ -1,3 +1,4 @@
+import pLimit from "p-limit";
 import { localBackend } from "../ai-sdk/providers/editly";
 import { compile } from "./ir/compile";
 import { executePlan } from "./ir/execute";
@@ -8,6 +9,7 @@ import {
 } from "./renderers/context-builder";
 import { renderRoot } from "./renderers/render";
 import { resolveLazy } from "./renderers/resolve-lazy";
+import { resolveConcurrency } from "./renderers/utils";
 import { type ResolveContext, withResolveContext } from "./resolve-context";
 import type { RenderOptions, RenderResult, VargElement } from "./types";
 
@@ -32,6 +34,11 @@ async function prepare(
     cache,
     storage: options.storage,
     defaults: options.defaults,
+    // Same knob and default as executePlan's `concurrency`: async
+    // components generating during resolveLazy are subject to the same
+    // budget as steps generating during executePlan. Previously this
+    // phase was unbounded — a bypass, not a feature (sdk#225).
+    limit: pLimit(resolveConcurrency(options.concurrency)),
   };
 
   // Resolve lazy elements (from async components) within the resolve context.

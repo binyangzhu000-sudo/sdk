@@ -40,7 +40,7 @@ import { mergeAssFiles, shiftAssTimestamps, transformCue } from "./merge-ass";
 import { renderMusic } from "./music";
 import { addTask, completeTask, startTask } from "./progress";
 import { renderSpeech } from "./speech";
-import { resolvePath } from "./utils";
+import { resolveConcurrency, resolvePath } from "./utils";
 import { renderVideo } from "./video";
 
 interface RenderedOverlay {
@@ -187,14 +187,7 @@ export async function renderRoot(
   audioTracks.push(...overlayAudio);
 
   // 3. Render clips in parallel
-  const concurrency =
-    options.concurrency === undefined ? 3 : options.concurrency;
-  if (
-    concurrency !== Number.POSITIVE_INFINITY &&
-    (!Number.isInteger(concurrency) || concurrency < 1)
-  ) {
-    throw new Error("render option `concurrency` must be a positive integer");
-  }
+  const concurrency = resolveConcurrency(options.concurrency);
 
   const clipResults = await pMap(
     flatten.clipElements,

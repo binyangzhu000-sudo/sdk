@@ -10,6 +10,25 @@ export function resolvePath(path: string): string {
   return resolve(process.cwd(), path);
 }
 
+/**
+ * Normalize the `concurrency` render option into a positive integer (or
+ * Infinity), throwing the SDK's own error message rather than p-limit's
+ * TypeError.
+ *
+ * Shared by the resolveLazy limiter and the clip-render pMap so a bad
+ * value fails identically no matter which phase reaches it first.
+ */
+export function resolveConcurrency(concurrency: number | undefined): number {
+  const value = concurrency === undefined ? 3 : concurrency;
+  if (
+    value !== Number.POSITIVE_INFINITY &&
+    (!Number.isInteger(value) || value < 1)
+  ) {
+    throw new Error("render option `concurrency` must be a positive integer");
+  }
+  return value;
+}
+
 let tempCounter = 0;
 
 /**
