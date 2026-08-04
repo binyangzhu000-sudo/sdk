@@ -105,30 +105,20 @@ export async function detectSpeechActivity(
   const mergeGap = options.mergeGap ?? 0.3;
   const minActivity = options.minActivity ?? 0.1;
 
-  const isUrlInput = file.url != null;
+  // Temp file owned by `file` (see detectSilence) — shared, not ours to delete.
   const input = file.url ?? (await file.toTempFile());
-  try {
-    const result =
-      await $`ffmpeg -i ${input} -af highpass=f=${band.low},lowpass=f=${band.high},silencedetect=noise=${noiseDb}dB:d=${minSilence} -f null -`
-        .quiet()
-        .nothrow();
-    const stderr = result.stderr.toString();
-    const silences = parseSilenceRanges(stderr);
+  const result =
+    await $`ffmpeg -i ${input} -af highpass=f=${band.low},lowpass=f=${band.high},silencedetect=noise=${noiseDb}dB:d=${minSilence} -f null -`
+      .quiet()
+      .nothrow();
+  const stderr = result.stderr.toString();
+  const silences = parseSilenceRanges(stderr);
 
-    // Prefer the container duration from stderr (parseSilenceRanges already
-    // reads it for trailing silence); the caller-provided duration is the
-    // fallback when ffmpeg didn't print one.
-    const activity = invertSilences(silences, duration);
-    return mergeActivity(activity, mergeGap, minActivity);
-  } finally {
-    if (!isUrlInput) {
-      try {
-        await Bun.file(input).delete?.();
-      } catch {
-        /* ignore cleanup errors */
-      }
-    }
-  }
+  // Prefer the container duration from stderr (parseSilenceRanges already
+  // reads it for trailing silence); the caller-provided duration is the
+  // fallback when ffmpeg didn't print one.
+  const activity = invertSilences(silences, duration);
+  return mergeActivity(activity, mergeGap, minActivity);
 }
 
 /**

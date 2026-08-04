@@ -46,26 +46,18 @@ export async function detectSilence(
 
   const noiseDb = options.noiseDb ?? -30;
   const minDuration = options.minDuration ?? 0.3;
-  const isUrlInput = file.url != null;
+  // The temp file (if any) is owned by `file` and shared with the other
+  // ffmpeg consumers of the same clip — probeDuration and
+  // detectSpeechActivity. Deleting it here would strand whichever runs next.
   const input = file.url ?? (await file.toTempFile());
-  try {
-    const result =
-      await $`ffmpeg -i ${input} -af silencedetect=noise=${noiseDb}dB:d=${minDuration} -f null -`
-        .quiet()
-        .nothrow();
-    // silencedetect logs to stderr; ffmpeg exits 0 on success for -f null
-    const stderr = result.stderr.toString();
+  const result =
+    await $`ffmpeg -i ${input} -af silencedetect=noise=${noiseDb}dB:d=${minDuration} -f null -`
+      .quiet()
+      .nothrow();
+  // silencedetect logs to stderr; ffmpeg exits 0 on success for -f null
+  const stderr = result.stderr.toString();
 
-    return parseSilenceRanges(stderr);
-  } finally {
-    if (!isUrlInput) {
-      try {
-        await Bun.file(input).delete?.();
-      } catch {
-        /* ignore cleanup errors */
-      }
-    }
-  }
+  return parseSilenceRanges(stderr);
 }
 
 /** Parse ffmpeg silencedetect stderr output into TimeRange[]. Exported for speech-activity.ts. */

@@ -42,76 +42,56 @@ async function extractViaBackend(
   backend: FFmpegBackend,
   outPath: string,
 ): Promise<File> {
-  // resolvePath may create a temp file for non-URL inputs — track it for cleanup.
-  const isUrlInput = file.url != null;
-  let tempInput: string | undefined;
-  if (!isUrlInput) {
-    tempInput = await file.toTempFile();
-  }
-  try {
-    const result = await backend.run({
-      inputs: [{ path: isUrlInput ? file : tempInput! }],
-      outputArgs: ["-vn", "-acodec", "libmp3lame", "-q:a", "2"],
-      outputPath: outPath,
+  // Pass the File through for non-URL inputs: the backend's resolvePath calls
+  // toTempFile(), which is memoized on the File, so the source video is
+  // materialized once and reused by any later consumer instead of being
+  // written here and deleted out from under them.
+  const result = await backend.run({
+    inputs: [{ path: file }],
+    outputArgs: ["-vn", "-acodec", "libmp3lame", "-q:a", "2"],
+    outputPath: outPath,
+  });
+  if (result.output.type === "url") {
+    const response = await fetch(result.output.url);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    return File.fromGenerated({
+      uint8Array: bytes,
+      mediaType: "audio/mpeg",
+      url: result.output.url,
     });
-    if (result.output.type === "url") {
-      const response = await fetch(result.output.url);
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      return File.fromGenerated({
-        uint8Array: bytes,
-        mediaType: "audio/mpeg",
-        url: result.output.url,
-      });
-    }
-    const data = await Bun.file(result.output.path).arrayBuffer();
-    try {
-      await Bun.file(result.output.path).delete?.();
-    } catch {
-      /* ignore cleanup errors */
-    }
-    return File.fromBuffer(new Uint8Array(data), "audio/mpeg");
-  } finally {
-    if (tempInput) {
-      try {
-        await Bun.file(tempInput).delete?.();
-      } catch {
-        /* ignore cleanup errors */
-      }
-    }
   }
+  // `outPath` is this function's own output, not a File-owned temp — ours to delete.
+  const data = await Bun.file(result.output.path).arrayBuffer();
+  try {
+    await Bun.file(result.output.path).delete?.();
+  } catch {
+    /* ignore cleanup errors */
+  }
+  return File.fromBuffer(new Uint8Array(data), "audio/mpeg");
 }
 
 async function extractViaLocalFfmpeg(
   file: File,
   outPath: string,
 ): Promise<File> {
-  const isUrlInput = file.url != null;
+  // Temp input (if any) is owned by `file` — memoized and shared downstream.
   const input = file.url ?? (await file.toTempFile());
-  try {
-    const result =
-      await $`ffmpeg -y -i ${input} -vn -acodec libmp3lame -q:a 2 ${outPath}`
-        .quiet()
-        .nothrow();
-    if (result.exitCode !== 0) {
-      const stderr = result.stderr.toString().trim();
-      throw new Error(
-        `ffmpeg audio extraction failed (exit ${result.exitCode}): ${stderr || "unknown error"}`,
-      );
-    }
-    const data = await Bun.file(outPath).arrayBuffer();
-    try {
-      await Bun.file(outPath).delete?.();
-    } catch {
-      /* ignore cleanup errors */
-    }
-    return File.fromBuffer(new Uint8Array(data), "audio/mpeg");
-  } finally {
-    if (!isUrlInput) {
-      try {
-        await Bun.file(input).delete?.();
-      } catch {
-        /* ignore cleanup errors */
-      }
-    }
+  const result =
+    await $`ffmpeg -y -i ${input} -vn -acodec libmp3lame -q:a 2 ${outPath}`
+      .quiet()
+      .nothrow();
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.toString().trim();
+    throw new Error(
+      `ffmpeg audio extraction failed (exit ${result.exitCode}): ${stderr || "unknown error"}`,
+    );
   }
+  // `outPath` is our own output — ours to delete.
+  const data = await Bun.file(outPath).arrayBuffer();
+  try {
+    await Bun.file(outPath).delete?.();
+  } catch {
+    /* ignore cleanup errors */
+  }
+  return File.fromBuffer(new Uint8Array(data), "audio/mpeg");
 }

@@ -1,5 +1,60 @@
+import { unlinkSync } from "node:fs";
 import type { ImageModelV3File } from "@ai-sdk/provider";
 import type { StorageProvider } from "./storage/types";
+
+// ---------------------------------------------------------------------------
+// Temp-file ownership
+//
+// `toTempFile()` materializes a buffer-backed File to disk so ffmpeg (which
+// only takes paths) can read it. Previously each call minted a fresh
+// `varg-<ts>-<rand>` path, so one File probed by ffprobe, then silencedetect,
+// then bandpassed silencedetect wrote its bytes three times — and cleanup was
+// the *caller's* job, done inconsistently (detectSilence/detectSpeechActivity
+// deleted in `finally`; probeDurationLocal never did, leaking one file per
+// clip).
+//
+// The two problems are one problem: materialization can only be memoized if
+// the File — not the caller — owns the path's lifetime. So the File keeps the
+// path, and it is released when the File becomes unreachable (FinalizationRegistry)
+// or when the process exits, whichever comes first.
+// ---------------------------------------------------------------------------
+
+/** Paths owned by live Files, swept on process exit. */
+const liveTempPaths = new Set<string>();
+
+function unlinkQuiet(path: string): void {
+  try {
+    unlinkSync(path);
+  } catch {
+    /* already gone, or never written */
+  }
+}
+
+function releaseTempPath(path: string): void {
+  if (!liveTempPaths.delete(path)) return;
+  unlinkQuiet(path);
+}
+
+/**
+ * Reclaim a File's temp file once the File itself is unreachable. Holds only
+ * the path string — capturing the File would keep it alive forever.
+ */
+const tempFileFinalizer =
+  typeof FinalizationRegistry === "function"
+    ? new FinalizationRegistry<string>(releaseTempPath)
+    : undefined;
+
+let exitHookInstalled = false;
+
+/** Sweep any still-live temp files on normal process exit (sync — `exit` allows no async). */
+function installExitHook(): void {
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.on("exit", () => {
+    for (const path of liveTempPaths) unlinkQuiet(path);
+    liveTempPaths.clear();
+  });
+}
 
 /** Type of generated content */
 export type GeneratedFileType =
@@ -27,6 +82,10 @@ export class File {
   private _mediaType: string;
   private _loader: (() => Promise<Uint8Array>) | null = null;
   private _metadata: FileMetadata = {};
+  /** Materialized temp path, once `toTempFile()` has written one. */
+  private _tempPath: string | null = null;
+  /** In-flight materialization — dedupes concurrent `toTempFile()` calls. */
+  private _tempPromise: Promise<string> | null = null;
 
   private constructor(
     options:
@@ -238,17 +297,64 @@ export class File {
   }
 
   /**
-   * Write file data to a temporary file and return the path.
+   * Materialize this file's bytes to a temp path on disk, for tools that
+   * only accept paths (ffmpeg/ffprobe).
+   *
+   * Memoized: repeated calls on the same File return the same path and write
+   * once. A single clip is probed for duration, then run through
+   * `silencedetect`, then through bandpassed `silencedetect` — three
+   * consumers, one file.
+   *
+   * The File owns the path. It is unlinked when the File is garbage-collected
+   * or the process exits; callers must NOT delete it, or the next consumer
+   * gets a path to nothing. Use {@link releaseTempFile} to free it eagerly
+   * when you know the File is done.
+   *
    * @returns Path to the temporary file
    */
   async toTempFile(): Promise<string> {
-    const data = await this.data();
-    const ext = this.extensionFromMediaType();
-    const tmpDir = process.env.TMPDIR ?? "/tmp";
-    const filename = `varg-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-    const path = `${tmpDir}/${filename}`;
-    await Bun.write(path, data);
-    return path;
+    if (this._tempPath !== null) {
+      // Re-materialize if something outside deleted the file (a stale caller,
+      // a tmp reaper). Cheaper than making every consumer re-verify.
+      if (await Bun.file(this._tempPath).exists()) return this._tempPath;
+      liveTempPaths.delete(this._tempPath);
+      this._tempPath = null;
+    }
+    if (this._tempPromise) return this._tempPromise;
+
+    this._tempPromise = (async () => {
+      const data = await this.data();
+      const ext = this.extensionFromMediaType();
+      const tmpDir = process.env.TMPDIR ?? "/tmp";
+      const filename = `varg-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+      const path = `${tmpDir}/${filename}`;
+      await Bun.write(path, data);
+      this._tempPath = path;
+      liveTempPaths.add(path);
+      installExitHook();
+      tempFileFinalizer?.register(this, path, this);
+      return path;
+    })();
+
+    try {
+      return await this._tempPromise;
+    } finally {
+      this._tempPromise = null;
+    }
+  }
+
+  /**
+   * Delete this File's temp file now, instead of waiting for GC or exit.
+   *
+   * Optional — an unreleased temp file is reclaimed either way. Worth calling
+   * in long-lived loops over large media, where waiting for GC means holding
+   * gigabytes of /tmp. A later `toTempFile()` simply re-materializes.
+   */
+  releaseTempFile(): void {
+    if (this._tempPath === null) return;
+    tempFileFinalizer?.unregister(this);
+    releaseTempPath(this._tempPath);
+    this._tempPath = null;
   }
 
   static async toTemp(
