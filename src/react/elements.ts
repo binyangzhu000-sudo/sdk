@@ -107,6 +107,16 @@ function attachAudioGetter<
       });
       return node;
     },
+    // A getter with no setter makes `el.audio = x` throw "Attempted to assign
+    // to readonly property" in strict mode (all ESM). Callers legitimately
+    // overwrite this: render's dry-run validator replaces the awaitable
+    // element's fields with mocks (`el.audio = el`) so user code can run
+    // without hitting AI providers, and that assignment broke every render
+    // whose TSX contained a Speech or Video element. Accepting a replacement
+    // keeps the lazy default while leaving the property writable.
+    set(replacement: AudioNode) {
+      node = replacement;
+    },
     enumerable: false,
     configurable: true,
   });
