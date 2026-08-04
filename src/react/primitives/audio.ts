@@ -19,6 +19,10 @@ export {
   type TimeRange,
 } from "./silence";
 export {
+  detectSilenceViaBackend,
+  parseSilenceMetadata,
+} from "./silence-backend";
+export {
   alignWordsToActivity,
   detectSpeechActivity,
   invertSilences,

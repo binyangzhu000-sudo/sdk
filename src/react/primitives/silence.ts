@@ -6,6 +6,7 @@
 import { $ } from "bun";
 import type { File } from "../../ai-sdk/file";
 import { getResolveContext } from "../resolve-context";
+import { detectSilenceViaBackend } from "./silence-backend";
 
 export interface SilenceDetectOptions {
   /** Noise threshold in dB — audio below this level counts as silence. Default -30. */
@@ -26,26 +27,34 @@ export interface TimeRange {
  * footsteps count as sound. For speech-specific boundaries combine with
  * `transcribeAudio()` word timings.
  *
- * Runs local ffmpeg only (silencedetect output is on stderr, which cloud
- * backends don't return). Reads URLs directly when available.
- *
- * @throws Error if a cloud backend is active (silencedetect requires local
- *         ffmpeg stderr parsing, which cloud backends don't support).
+ * Local ffmpeg reads the detections off stderr. Cloud backends return
+ * output files rather than stderr, so on those the same filter chain is
+ * run with `ametadata=mode=print:file=…` and the resulting file is parsed
+ * — see `silence-backend.ts`. Reads URLs directly when available.
  */
 export async function detectSilence(
   file: File,
   options: SilenceDetectOptions = {},
 ): Promise<TimeRange[]> {
+  const noiseDb = options.noiseDb ?? -30;
+  const minDuration = options.minDuration ?? 0.3;
   const ctx = getResolveContext();
-  if (ctx?.backend && ctx.backend.name !== "local") {
-    throw new Error(
-      `detectSilence requires local ffmpeg — cloud backend "${ctx.backend.name}" does not support silencedetect (stderr parsing). ` +
-        `Run this operation outside the render pipeline or use a local backend.`,
+  const backend = ctx?.backend;
+
+  if (backend && backend.name !== "local") {
+    // A file ending in silence yields a `silence_start` with no matching
+    // `silence_end`, and the metadata file — unlike ffmpeg's stderr — carries
+    // no `Duration:` banner to close it with, so probe for the duration.
+    const input = file.url ?? (await file.toTempFile());
+    const { duration } = await backend.ffprobe(input);
+    return detectSilenceViaBackend(
+      file,
+      backend,
+      `silencedetect=noise=${noiseDb}dB:d=${minDuration}`,
+      duration,
     );
   }
 
-  const noiseDb = options.noiseDb ?? -30;
-  const minDuration = options.minDuration ?? 0.3;
   // The temp file (if any) is owned by `file` and shared with the other
   // ffmpeg consumers of the same clip — probeDuration and
   // detectSpeechActivity. Deleting it here would strand whichever runs next.

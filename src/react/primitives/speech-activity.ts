@@ -19,6 +19,7 @@ import { $ } from "bun";
 import type { File } from "../../ai-sdk/file";
 import { getResolveContext } from "../resolve-context";
 import { parseSilenceRanges, type TimeRange } from "./silence";
+import { detectSilenceViaBackend } from "./silence-backend";
 
 export interface SpeechActivityOptions {
   /** Noise threshold in dB within the voice band. Default -30. */
@@ -84,35 +85,37 @@ export function mergeActivity(
 /**
  * Detect voice-activity intervals via bandpassed ffmpeg silencedetect.
  *
- * Local ffmpeg only (silencedetect output is on stderr, which cloud
- * backends don't return) — same constraint as `detectSilence`.
+ * Local ffmpeg reads the detections off stderr; cloud backends return them
+ * through an `ametadata` output file instead — same split as `detectSilence`.
  */
 export async function detectSpeechActivity(
   file: File,
   duration: number,
   options: SpeechActivityOptions = {},
 ): Promise<TimeRange[]> {
-  const ctx = getResolveContext();
-  if (ctx?.backend && ctx.backend.name !== "local") {
-    throw new Error(
-      `detectSpeechActivity requires local ffmpeg — cloud backend "${ctx.backend.name}" does not support silencedetect (stderr parsing).`,
-    );
-  }
-
   const noiseDb = options.noiseDb ?? -30;
   const minSilence = options.minSilence ?? 0.15;
   const band = options.band ?? { low: 200, high: 3400 };
   const mergeGap = options.mergeGap ?? 0.3;
   const minActivity = options.minActivity ?? 0.1;
+  const filter = `highpass=f=${band.low},lowpass=f=${band.high},silencedetect=noise=${noiseDb}dB:d=${minSilence}`;
 
-  // Temp file owned by `file` (see detectSilence) — shared, not ours to delete.
-  const input = file.url ?? (await file.toTempFile());
-  const result =
-    await $`ffmpeg -i ${input} -af highpass=f=${band.low},lowpass=f=${band.high},silencedetect=noise=${noiseDb}dB:d=${minSilence} -f null -`
+  const ctx = getResolveContext();
+  const backend = ctx?.backend;
+
+  let silences: TimeRange[];
+  if (backend && backend.name !== "local") {
+    // `duration` is already a parameter here, so unlike detectSilence this
+    // needs no extra probe to close a trailing silence.
+    silences = await detectSilenceViaBackend(file, backend, filter, duration);
+  } else {
+    // Temp file owned by `file` (see detectSilence) — shared, not ours to delete.
+    const input = file.url ?? (await file.toTempFile());
+    const result = await $`ffmpeg -i ${input} -af ${filter} -f null -`
       .quiet()
       .nothrow();
-  const stderr = result.stderr.toString();
-  const silences = parseSilenceRanges(stderr);
+    silences = parseSilenceRanges(result.stderr.toString());
+  }
 
   // Prefer the container duration from stderr (parseSilenceRanges already
   // reads it for trailing silence); the caller-provided duration is the
