@@ -112,6 +112,10 @@ export class RendiBackend implements FFmpegBackend {
         if (!output) {
           throw new Error("rendi ffprobe completed but no output metadata");
         }
+        // NOTE: Rendi reports container-level metadata only — there is no
+        // stream list, so `hasAudio` stays undefined here. Callers must treat
+        // that as "unknown" rather than "no audio"; resolveVideoMixVolume
+        // warns instead of silently dropping the track.
         return {
           duration: output.duration ?? 0,
           ...(output.width != null ? { width: output.width } : {}),
