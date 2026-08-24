@@ -23,6 +23,7 @@ import {
 } from "../../ai-sdk/middleware";
 import { localBackend } from "../../ai-sdk/providers/editly";
 import type { FFmpegBackend } from "../../ai-sdk/providers/editly/backends";
+import type { VideoModelV3 } from "../../ai-sdk/video-model";
 import type {
   RenderMode,
   RenderOptions,
@@ -57,6 +58,26 @@ function toImageModelV3(
     doGenerate: async () => {
       throw new Error(
         `toImageModelV3 shell: doGenerate should not be called in preview mode (model: ${modelId})`,
+      );
+    },
+  };
+}
+
+function toVideoModelV3(
+  model: Parameters<typeof generateVideo>[0]["model"],
+): VideoModelV3 {
+  if (typeof model === "object" && model.specificationVersion === "v3") {
+    return model;
+  }
+  const modelId = typeof model === "string" ? model : model.modelId;
+  return {
+    specificationVersion: "v3",
+    provider: "placeholder",
+    modelId,
+    maxVideosPerCall: 1,
+    doGenerate: async () => {
+      throw new Error(
+        `toVideoModelV3 shell: doGenerate should not be called in preview mode (model: ${modelId})`,
       );
     },
   };
@@ -165,7 +186,7 @@ export function createRenderContext(
       return cachedGenerateVideo({
         ...opts,
         model: wrapVideoModel({
-          model: opts.model,
+          model: toVideoModelV3(opts.model),
           middleware: placeholderFallbackMiddleware({
             mode: "preview",
             onFallback: () => {},
@@ -176,7 +197,9 @@ export function createRenderContext(
     }
 
     const result = await cachedGenerateVideo(opts);
-    emitPricing("video", opts.model.modelId, result);
+    const videoModelId =
+      typeof opts.model === "string" ? opts.model : opts.model.modelId;
+    emitPricing("video", videoModelId, result);
     return result;
   };
 
