@@ -58,6 +58,8 @@ export interface AudioNode
   transcribe(options?: {
     refine?: boolean;
     noiseDb?: number;
+    /** Context hint for Whisper — names, terms, domain language. */
+    prompt?: string;
   }): Promise<TranscriptionResult>;
   /**
    * Detect silence intervals via ffmpeg `silencedetect`.
@@ -180,7 +182,11 @@ export function makeAudioNode(props: AudioElementProps): AudioNode {
       );
     });
 
-  node.transcribe = (options?: { refine?: boolean; noiseDb?: number }) =>
+  node.transcribe = (options?: {
+    refine?: boolean;
+    noiseDb?: number;
+    prompt?: string;
+  }) =>
     memoize(
       `transcribe:${JSON.stringify(options ?? {})}`,
       async (): Promise<TranscriptionResult> => {
@@ -198,6 +204,7 @@ export function makeAudioNode(props: AudioElementProps): AudioNode {
         const raw = await transcribeAudio(resolved.meta.file, {
           cache: getActiveCache(),
           ...(model ? { model } : {}),
+          ...(options?.prompt ? { prompt: options.prompt } : {}),
         });
 
         // Align whisper boundary words to measured VOICE activity

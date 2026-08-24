@@ -79,6 +79,8 @@ export async function transcribeAudio(
   options: {
     cache?: CacheStorage;
     model?: Parameters<typeof transcribe>[0]["model"];
+    /** Context hint for Whisper — names, terms, domain language. */
+    prompt?: string;
   } = {},
 ): Promise<TranscriptionResult> {
   const ctx = getResolveContext();
@@ -91,7 +93,10 @@ export async function transcribeAudio(
     typeof model === "string"
       ? model
       : ((model as { modelId?: string }).modelId ?? "whisper");
-  const cacheKey = `transcribeAudio:${modelId}:${contentCacheIdentity(data)}`;
+  const promptKey = options.prompt
+    ? `:p${Bun.hash(options.prompt).toString(36)}`
+    : "";
+  const cacheKey = `transcribeAudio:${modelId}:${contentCacheIdentity(data)}${promptKey}`;
 
   if (cache) {
     const cached = await cache.get(cacheKey);
@@ -111,11 +116,14 @@ export async function transcribeAudio(
       model,
       audio: data,
       providerOptions: isGatewayModel
-        ? {}
+        ? options.prompt
+          ? { varg: { prompt: options.prompt } }
+          : {}
         : {
             groq: {
               responseFormat: "verbose_json",
               timestampGranularities: ["word"],
+              ...(options.prompt ? { prompt: options.prompt } : {}),
             },
           },
     }),

@@ -312,6 +312,13 @@ export interface CaptionsProps extends BaseProps {
   /** Font to use for captions. Overrides the style preset's default font.
    *  Available: "montserrat" | "roboto" | "poppins" | "inter" | "bebas-neue" | "rock-salt" | "oswald" | "space-grotesk" | "dm-sans" */
   font?: string;
+  /**
+   * Context hint for Whisper transcription (ignored when src is Speech with
+   * native word timings or when srt is provided). Whisper uses this as a
+   * prefix prompt — include names, terms, or domain language the model might
+   * mishear (e.g. "person named Flo" to avoid "flow").
+   */
+  prompt?: string;
 }
 
 export interface SplitProps extends BaseProps {

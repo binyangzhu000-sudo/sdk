@@ -236,7 +236,9 @@ async function resolveSrtContent(
     props.src.type === "audio" &&
     typeof maybeNode.transcribe === "function"
   ) {
-    const { words } = await maybeNode.transcribe();
+    const { words } = await maybeNode.transcribe(
+      props.prompt ? { prompt: props.prompt } : undefined,
+    );
     if (words && words.length > 0) {
       const srtContent = convertToSRT(words as GroqWord[]);
       const srtPath = uniqueTempPath("varg-captions", "srt");
@@ -285,11 +287,14 @@ async function resolveSrtContent(
       model,
       audio: new Uint8Array(audioData),
       providerOptions: transcriptionModel
-        ? {}
+        ? props.prompt
+          ? { varg: { prompt: props.prompt } }
+          : {}
         : {
             groq: {
               responseFormat: "verbose_json",
               timestampGranularities: ["word"],
+              ...(props.prompt ? { prompt: props.prompt } : {}),
             },
           },
     });
