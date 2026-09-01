@@ -132,10 +132,15 @@ function attachAudioGetter<
  * IGNORED_PROPS_BY_TYPE) — the expanded providerOptions carry the
  * semantic difference, so pre-existing configurations keep their keys.
  *
- * Provider mapping (verified against the varg API deep-merge behavior):
+ * Provider mapping:
  * - direct fal models → `providerOptions.fal.generate_audio`
- * - varg gateway models → `providerOptions.varg.fal.generate_audio`
- *   (the API forwards `provider_options.fal.*` to the fal payload)
+ * - varg gateway models → `providerOptions.varg.audio` (the UNIFIED field —
+ *   lifted to the request body top level by VargVideoModel and mapped per
+ *   model by the API's mapping_rules; models without native-audio support
+ *   silently ignore it). Do NOT inject provider_options.fal.generate_audio
+ *   here: the API rejects unknown provider_options keys with a 422, so the
+ *   old blind injection broke every fal video model whose schema lacks
+ *   generate_audio.
  */
 function expandNativeAudio(props: VideoProps): VideoProps {
   if (props.audio !== "native") return props;
@@ -155,12 +160,10 @@ function expandNativeAudio(props: VideoProps): VideoProps {
       string,
       unknown
     >;
-    const falOpts = { ...((vargOpts.fal as object) ?? {}) } as Record<
-      string,
-      unknown
-    >;
-    if (falOpts.generate_audio === undefined) falOpts.generate_audio = true;
-    vargOpts.fal = falOpts;
+    // Unified native-audio request — best-effort by design: the varg API
+    // maps it to the provider's own flag on models that support it and
+    // silently drops it elsewhere (mapping_rules, migration 0147).
+    if (vargOpts.audio === undefined) vargOpts.audio = true;
     providerOptions.varg = vargOpts as Record<string, unknown>;
   } else {
     // Default to the fal namespace (fal is the only provider with a

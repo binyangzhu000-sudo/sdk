@@ -382,9 +382,23 @@ class VargVideoModel implements VideoModelV3 {
     }
 
     if (options.providerOptions?.varg) {
-      params.provider_options = checkVargProviderOptions(
-        options.providerOptions.varg as Record<string, unknown>,
-      );
+      const vargOpts = {
+        ...(options.providerOptions.varg as Record<string, unknown>),
+      };
+      // Unified varg-API fields riding the `varg` namespace are lifted to the
+      // request body top level — they are NOT provider_options. `audio` is the
+      // unified native-audio request (audio: "native" sugar): the API maps it
+      // per model via mapping_rules (rename audio → generate_audio) and models
+      // without the rule silently ignore it. Sending it inside
+      // provider_options.fal instead used to rely on the API silently
+      // stripping unknown keys, which now 422s.
+      if (vargOpts.audio !== undefined) {
+        params.audio = vargOpts.audio;
+        delete vargOpts.audio;
+      }
+      if (Object.keys(vargOpts).length > 0) {
+        params.provider_options = checkVargProviderOptions(vargOpts);
+      }
     }
 
     const result = await executeJob(this.baseUrl, this.apiKey, "video", params);
