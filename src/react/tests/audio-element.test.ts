@@ -200,7 +200,12 @@ describe("audio: native sugar", () => {
     expect(po.fal?.generate_audio).toBe(true);
   });
 
-  test("expands into varg.fal namespace for varg gateway models", () => {
+  test("expands to the unified varg.audio field for varg gateway models", () => {
+    // NOT provider_options.fal.generate_audio: the varg API rejects unknown
+    // provider_options keys with a 422 on models whose fal schema lacks the
+    // flag. The unified `audio` field is mapped per model by the API's
+    // mapping_rules (rename audio → generate_audio) and silently ignored by
+    // models without native-audio support.
     const vid = Video({
       prompt: "sunset",
       audio: "native",
@@ -213,9 +218,8 @@ describe("audio: native sugar", () => {
       string,
       Record<string, unknown>
     >;
-    expect((po.varg?.fal as Record<string, unknown>)?.generate_audio).toBe(
-      true,
-    );
+    expect(po.varg?.audio).toBe(true);
+    expect(po.varg?.fal).toBeUndefined();
     expect(vid.props.keepAudio).toBe(true);
   });
 
