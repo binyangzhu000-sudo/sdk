@@ -36,6 +36,11 @@ export {
   magnificUpscalePrecisionDefinition,
   magnificVfxDefinition,
 } from "./magnific";
+export {
+  imageToVideoDefinition as minimaxH3MaxImageToVideo,
+  referenceToVideoDefinition as minimaxH3MaxReferenceToVideo,
+  textToVideoDefinition as minimaxH3MaxTextToVideo,
+} from "./minimax-h3-max";
 export { definition as nanoBanana2 } from "./nano-banana-2";
 export { definition as nanoBananaPro } from "./nano-banana-pro";
 export { definition as omnihuman } from "./omnihuman";
@@ -73,6 +78,11 @@ import {
 import { definition as llamaDefinition } from "./llama";
 import { definition as ltxA2vDefinition } from "./ltx-a2v";
 import { allMagnificDefinitions } from "./magnific";
+import {
+  imageToVideoDefinition as minimaxH3MaxImageToVideoDefinition,
+  referenceToVideoDefinition as minimaxH3MaxReferenceToVideoDefinition,
+  textToVideoDefinition as minimaxH3MaxTextToVideoDefinition,
+} from "./minimax-h3-max";
 import { definition as nanoBanana2Definition } from "./nano-banana-2";
 import { definition as nanoBananaProDefinition } from "./nano-banana-pro";
 import { definition as omnihumanDefinition } from "./omnihuman";
@@ -114,6 +124,9 @@ export const allModels = [
   wanDefinition,
   omnihumanDefinition,
   ltxA2vDefinition,
+  minimaxH3MaxTextToVideoDefinition,
+  minimaxH3MaxImageToVideoDefinition,
+  minimaxH3MaxReferenceToVideoDefinition,
   veedFabricDefinition,
   whisperDefinition,
   elevenlabsDefinition,
