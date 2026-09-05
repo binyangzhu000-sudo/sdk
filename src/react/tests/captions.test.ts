@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { convertToSRT } from "./captions";
+import { convertToSRT } from "../renderers/srt";
 
 // We need to test the internal convertSrtToAssGrouped function.
 // Since it's not exported, we'll test the full flow via convertToSRT + verifying SRT output,

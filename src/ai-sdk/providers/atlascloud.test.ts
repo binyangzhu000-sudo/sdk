@@ -199,9 +199,10 @@ describe("Atlas Cloud provider", () => {
       ],
     });
 
-    expect(harness.calls[0]?.body?.images).toBe(
-      "data:image/png;base64,AQID\nhttps://example.com/reference.png",
-    );
+    expect(harness.calls[0]?.body?.images).toEqual([
+      "data:image/png;base64,AQID",
+      "https://example.com/reference.png",
+    ]);
   });
 
   test("submits video fields to the video endpoint", async () => {

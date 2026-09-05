@@ -68,6 +68,52 @@ function getHeaders(apiKey: string): Record<string, string> {
   };
 }
 
+/**
+ * The varg API expects `provider_options` to be namespaced by the underlying
+ * provider: `{ fal: { generate_audio: true } }`. The API deep-merges only
+ * `provider_options.<provider_options_key>` into the provider payload —
+ * a flat bag like `{ generate_audio: true }` is silently dropped server-side.
+ *
+ * This validates the shape and warns once per process when a flat bag is
+ * detected, so callers learn their options are a no-op instead of silently
+ * getting default behavior.
+ */
+const KNOWN_UNDERLYING_PROVIDERS = new Set([
+  "fal",
+  "together",
+  "rendi",
+  "groq",
+  "elevenlabs",
+  "higgsfield",
+  "piapi",
+  "heygen",
+  "replicate",
+]);
+
+let warnedFlatProviderOptions = false;
+
+function checkVargProviderOptions(
+  opts: Record<string, unknown>,
+): Record<string, unknown> {
+  const keys = Object.keys(opts);
+  const hasProviderKey = keys.some(
+    (k) =>
+      KNOWN_UNDERLYING_PROVIDERS.has(k) &&
+      typeof opts[k] === "object" &&
+      opts[k] !== null,
+  );
+  if (keys.length > 0 && !hasProviderKey && !warnedFlatProviderOptions) {
+    warnedFlatProviderOptions = true;
+    console.warn(
+      `[varg] providerOptions.varg contains no provider namespace (keys: ${keys.join(", ")}). ` +
+        `The varg API only forwards options nested under a provider key, e.g. ` +
+        `providerOptions: { varg: { fal: { generate_audio: true } } }. ` +
+        `Flat options are dropped by the API.`,
+    );
+  }
+  return opts;
+}
+
 // /v2 job shape (routes/varg_jobs/common.ts serializeVargJob). The create
 // response wraps this with `urls: { self, refresh, status, cancel, retry }`.
 // The poll response (GET /v2/jobs/:id) is the same shape, possibly with
@@ -91,29 +137,83 @@ interface VargJobResponse {
   progress?: number | null;
 }
 
+/**
+ * Stable idempotency key for a job submission.
+ *
+ * Hash of (capability, params) with deterministic key ordering — the same
+ * logical request always produces the same key, so a retry after 429 or a
+ * network error references the SAME job instead of creating a duplicate
+ * (the ep5 incident: 123 jobs for ~8 unique requests, all idempotency-less).
+ *
+ * A per-process salt is NOT included: two identical submissions from the
+ * same or different processes legitimately dedupe to one job — outputs are
+ * deterministic-cached by the API anyway.
+ */
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object" && value.constructor === Object) {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      sorted[key] = canonicalize((value as Record<string, unknown>)[key]);
+    }
+    return sorted;
+  }
+  return value;
+}
+
+/** Exported for tests. */
+export function computeIdempotencyKey(
+  capability: string,
+  params: Record<string, unknown>,
+): string {
+  const canonical = JSON.stringify(canonicalize(params));
+  return `varg-sdk-${capability}-${Bun.hash(canonical).toString(16)}`;
+}
+
 async function submitJob(
   baseUrl: string,
   apiKey: string,
   capability: "video" | "image" | "speech" | "music",
   params: Record<string, unknown>,
+  maxRetries = 6,
 ): Promise<VargJobResponse> {
-  const response = await fetch(`${baseUrl}/${capability}`, {
-    method: "POST",
-    headers: getHeaders(apiKey),
-    body: JSON.stringify(params),
-  });
+  const idempotencyKey = computeIdempotencyKey(capability, params);
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(`${baseUrl}/${capability}`, {
+      method: "POST",
+      headers: {
+        ...getHeaders(apiKey),
+        "Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify(params),
+    });
 
-  if (!response.ok) {
+    if (response.ok) {
+      return (await response.json()) as VargJobResponse;
+    }
+
     const raw = (await response.json().catch(() => null)) as Record<
       string,
       unknown
     > | null;
     const errorData = ((raw?.error ?? raw) || {}) as { message?: string };
     const msg = errorData?.message ?? `varg api returned ${response.status}`;
+
+    // Rate limited — back off and retry (60 jobs/min window resets quickly).
+    if (response.status === 429 && attempt < maxRetries) {
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const delayMs = Number.isFinite(retryAfter)
+        ? retryAfter * 1000
+        : Math.min(60_000, 5_000 * 2 ** attempt);
+      console.warn(
+        `[varg] rate limited on ${capability}, retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt + 1}/${maxRetries})`,
+      );
+      await new Promise((r) => setTimeout(r, delayMs));
+      continue;
+    }
+
     throw new VargAPIError(msg, response.status);
   }
-
-  return (await response.json()) as VargJobResponse;
 }
 
 async function pollJob(
@@ -282,7 +382,23 @@ class VargVideoModel implements VideoModelV3 {
     }
 
     if (options.providerOptions?.varg) {
-      params.provider_options = options.providerOptions.varg;
+      const vargOpts = {
+        ...(options.providerOptions.varg as Record<string, unknown>),
+      };
+      // Unified varg-API fields riding the `varg` namespace are lifted to the
+      // request body top level — they are NOT provider_options. `audio` is the
+      // unified native-audio request (audio: "native" sugar): the API maps it
+      // per model via mapping_rules (rename audio → generate_audio) and models
+      // without the rule silently ignore it. Sending it inside
+      // provider_options.fal instead used to rely on the API silently
+      // stripping unknown keys, which now 422s.
+      if (vargOpts.audio !== undefined) {
+        params.audio = vargOpts.audio;
+        delete vargOpts.audio;
+      }
+      if (Object.keys(vargOpts).length > 0) {
+        params.provider_options = checkVargProviderOptions(vargOpts);
+      }
     }
 
     const result = await executeJob(this.baseUrl, this.apiKey, "video", params);
@@ -340,7 +456,9 @@ class VargImageModel implements ImageModelV3 {
     }
 
     if (options.providerOptions?.varg) {
-      params.provider_options = options.providerOptions.varg;
+      params.provider_options = checkVargProviderOptions(
+        options.providerOptions.varg as Record<string, unknown>,
+      );
     }
 
     const result = await executeJob(this.baseUrl, this.apiKey, "image", params);
@@ -410,9 +528,17 @@ class VargMusicModel implements MusicModelV3 {
       model: this.modelId,
       prompt: options.prompt,
     };
-    if (options.duration) params.duration = options.duration;
+    // Integer seconds: the API converts to ms by multiplying without
+    // rounding, and ElevenLabs rejects fractional music_length_ms with a
+    // 422 (int_from_float). Fractional seconds also survive float
+    // multiplication badly (88.35 * 1000 = 88349.999...), so rounding to
+    // whole seconds client-side is the only safe shape until the API
+    // rounds server-side. BGM is auto-trimmed to the timeline anyway.
+    if (options.duration) params.duration = Math.round(options.duration);
     if (options.providerOptions?.varg) {
-      params.provider_options = options.providerOptions.varg;
+      params.provider_options = checkVargProviderOptions(
+        options.providerOptions.varg as Record<string, unknown>,
+      );
     }
 
     const result = await executeJob(this.baseUrl, this.apiKey, "music", params);
@@ -451,4 +577,5 @@ export function createVarg(settings: VargProviderSettings = {}): VargProvider {
 }
 
 const varg_provider = createVarg();
+
 export { varg_provider as varg };

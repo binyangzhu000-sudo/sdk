@@ -48,6 +48,14 @@ interface AtlasCloudConfig {
   maxPollDurationMs: number;
 }
 
+/**
+ * Error thrown for any failed Atlas Cloud exchange: a non-2xx response, a
+ * non-200 code in the response envelope, an unparseable body, a prediction
+ * that finished in a failure state, or a poll that exceeded its deadline.
+ *
+ * `statusCode` carries the HTTP status when the failure came from a response;
+ * it is undefined for failures detected after a successful HTTP exchange.
+ */
 export class AtlasCloudAPIError extends Error {
   constructor(
     message: string,
@@ -253,12 +261,20 @@ function fileToInput(file: ImageModelV3File) {
   return `data:${file.mediaType};base64,${base64}`;
 }
 
+/**
+ * Attach reference images to an Atlas Cloud request body.
+ *
+ * Sent as an array rather than a newline-joined string: the array form is
+ * unambiguous for multi-image models such as `google/nano-banana/edit`, where
+ * a joined string leaves it to the service to re-split the value. A caller can
+ * still override the shape entirely via `providerOptions.atlascloud.images`.
+ */
 function addFiles(
   body: Record<string, unknown>,
   files: ImageModelV3File[] | undefined,
 ) {
   if (files?.length && body.images == null) {
-    body.images = files.map(fileToInput).join("\n");
+    body.images = files.map(fileToInput);
   }
 }
 
@@ -375,6 +391,19 @@ class AtlasCloudVideoModel implements VideoModelV3 {
   }
 }
 
+/**
+ * Create an Atlas Cloud provider for the AI SDK.
+ *
+ * Exposes image and video models only. Atlas Cloud's generation endpoints are
+ * asynchronous, so each call submits once and then polls the returned
+ * prediction id until it completes, fails, or passes `maxPollDurationMs`.
+ * `languageModel` and `embeddingModel` throw `NoSuchModelError`.
+ *
+ * @param settings - API key, base URL, and polling bounds. The key falls back
+ * to `ATLASCLOUD_API_KEY`; polling defaults are applied when unset.
+ * @returns A provider whose `imageModel` / `videoModel` accept any model id
+ * Atlas Cloud serves.
+ */
 export function createAtlasCloud(
   settings: AtlasCloudProviderSettings = {},
 ): AtlasCloudProvider {
